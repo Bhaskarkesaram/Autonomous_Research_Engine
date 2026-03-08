@@ -9,8 +9,9 @@ client = OpenAI(
     api_key=os.getenv("OPENROUTER_API_KEY"),
 )
 
+model_name = os.getenv("OPENROUTER_MODEL", "mistralai/mistral-7b-instruct")
 response = client.chat.completions.create(
-    model="mistralai/mistral-7b-instruct",
+    model=model_name,
     messages=[
         {"role": "user", "content": "Say hello"}
     ],
