@@ -16,26 +16,29 @@ def build_graph():
 
     workflow = StateGraph(AgentState)
 
-    # ===============================
+    # =================================
     # REGISTER NODES
-    # ===============================
+    # =================================
+
     workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("planning", planning_node)
     workflow.add_node("validation", validation_node)
     workflow.add_node("execution", execution_node)
     workflow.add_node("synthesis", synthesis_node)
 
-    # ===============================
+    # =================================
     # ENTRY POINT
-    # ===============================
+    # =================================
+
     workflow.set_entry_point("supervisor")
 
-    # ===============================
+    # =================================
     # SUPERVISOR ROUTING
-    # ===============================
+    # =================================
+
     workflow.add_conditional_edges(
         "supervisor",
-        lambda state: state["next"],
+        lambda state: state.get("next"),
         {
             "planning": "planning",
             "validation": "validation",
@@ -44,20 +47,20 @@ def build_graph():
         }
     )
 
-    # ===============================
-    # NORMAL WORKFLOW
-    # ===============================
+    # =================================
+    # WORKFLOW TRANSITIONS
+    # =================================
 
     # planning → validation
     workflow.add_edge("planning", "validation")
 
-    # validation decides retry OR continue
+    # validation → planning OR execution
     workflow.add_conditional_edges(
         "validation",
         planning_router
     )
 
-    # execution → supervisor (check if more tasks remain)
+    # execution → supervisor
     workflow.add_edge("execution", "supervisor")
 
     # synthesis → end

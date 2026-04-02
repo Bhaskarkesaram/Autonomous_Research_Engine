@@ -31,25 +31,44 @@ def write_todos(request: str) -> List[Dict]:
         )
 
     prompt = f"""
-You are a structured planning system.
+You are an expert AI planner specialized in healthcare AI systems.
 
-Break the objective into exactly 6 concise tasks.
-Each description must be under 40 words.
+USER OBJECTIVE:
+{request}
 
-Return STRICT valid JSON.
+STRICT INSTRUCTIONS:
 
-Format:
+- Generate EXACTLY 6 tasks
+- Each task must represent ONE specific AI application in healthcare
+- Tasks must NOT overlap
+- Tasks must NOT be generic (NO "research", "analysis", etc.)
+- Each task must focus on a DISTINCT application
+
+MANDATORY STRUCTURE:
+
+1. Medical Imaging
+2. Clinical Decision Support
+3. Predictive Analytics
+4. Patient Engagement (Chatbots / Virtual Assistants)
+5. Remote Monitoring / Telemedicine
+6. Healthcare System Integration
+
+FORMAT STRICTLY AS JSON:
 [
   {{
     "id": 1,
-    "title": "Task title",
-    "description": "Short explanation",
+    "title": "Medical Imaging",
+    "description": "Analyze AI applications in medical imaging including diagnosis and segmentation",
     "status": "pending"
-  }}
+  }},
+  ...
 ]
 
-Objective:
-{request}
+RULES:
+- Do NOT combine multiple applications in one task
+- Do NOT generate vague titles
+- Each description must be under 40 words
+- Output ONLY JSON (no explanation)
 """
 
     try:

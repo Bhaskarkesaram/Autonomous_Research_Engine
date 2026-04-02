@@ -5,9 +5,11 @@ import requests
 from dotenv import load_dotenv
 from pathlib import Path
 
+from backend.graph import state
 from backend.tools.planning_tool import write_todos
 from backend.tools.file_system_tools import write_file, read_file
-
+from backend.tools.delegation_tool import delegate_task
+from backend.config.settings import DEBUG
 
 # =====================================================
 # LOAD ENVIRONMENT VARIABLES
@@ -201,79 +203,75 @@ def validation_node(state: Dict) -> Dict:
 # =====================================================
 # EXECUTION NODE (Milestone-2)
 # =====================================================
-
 def execution_node(state: Dict) -> Dict:
 
-    # Get state variables (reference, not copies)
     todos = state.get("todos", [])
     completed = state.setdefault("completed_tasks", [])
     logs = state.setdefault("execution_log", [])
     files = state.setdefault("files", {})
-    user_request = state.get("user_request", "")
 
     for task in todos:
 
         task_id = task.get("id")
 
-        # Skip already completed tasks
         if task_id in completed:
             continue
 
         state["current_task"] = task_id
 
-        # THINK
-        logs.append(f"THINK → Analyzing Task {task_id}")
+        msg = f"THINK → Supervisor analyzing Task {task_id}"
+        logs.append(msg)
+        if DEBUG:
+            print(msg)
 
-        prompt = f"""
-You are a healthcare AI research expert.
+        # -------------------------------
+        # STEP 1 — RESEARCH
+        # -------------------------------
+        msg = f"TASK TOOL → research: {task['title']}"
+        logs.append(msg)
+        if DEBUG:
+            print(msg)
 
-Your job is to complete ONE research task from a larger report.
+        delegate_task(state, {
+            "id": task_id,
+            "title": f"research: {task['title']}",
+            "description": task["description"]
+        })
 
-Task Title:
-{task['title']}
+        # -------------------------------
+        # STEP 2 — ANALYSIS
+        # -------------------------------
+        msg = f"TASK TOOL → analysis: {task['title']}"
+        logs.append(msg)
+        if DEBUG:
+            print(msg)
 
-Task Description:
-{task['description']}
+        delegate_task(state, {
+            "id": task_id,
+            "title": f"analysis: {task['title']}",
+            "description": task["description"]
+        })
 
-User Objective:
-{user_request}
+        # -------------------------------
+        # STEP 3 — SUMMARY
+        # -------------------------------
+        msg = f"TASK TOOL → summary: {task['title']}"
+        logs.append(msg)
+        if DEBUG:
+            print(msg)
 
-Write a clear section for a research report.
+        delegate_task(state, {
+            "id": task_id,
+            "title": f"summary: {task['title']}",
+            "description": task["description"]
+        })
 
-Structure your answer exactly like this:
-
-Overview:
-Explain the concept clearly.
-
-Real-world Usage:
-Describe where this technology is used in healthcare systems.
-
-Benefits:
-List the major advantages.
-
-Limitations:
-Explain current challenges or risks.
-
-Write about 120–150 words.
-Do NOT repeat other applications.
-Focus only on THIS task.
-"""
-
-        # ACT
-        research_output = call_llm(prompt)
-
-        filepath = f"memory/research/task_{task_id}.txt"
-
-        # Write research result to virtual file system
-        write_file(state, filepath, research_output)
-
-        logs.append(f"WRITE FILE → {filepath}")
-        logs.append(f"OBSERVE → Stored research in {filepath}")
-
-        # Mark task as completed
         completed.append(task_id)
 
-        logs.append("")
+        msg = f"OBSERVE → Task {task_id} completed"
+        logs.append(msg)
+        if DEBUG:
+            print(msg)
 
     return {
         "completed_tasks": completed,
@@ -281,74 +279,57 @@ Focus only on THIS task.
         "files": files
     }
 
-
 # =====================================================
 # SYNTHESIS NODE
 # =====================================================
-
 def synthesis_node(state: Dict) -> Dict:
 
-    output = "\nFINAL EXECUTION REPORT\n"
-    output += "=" * 60 + "\n\n"
-
+   
     todos = state.get("todos", [])
-    logs = state.get("execution_log", [])
+    detailed = state.get("detailed", False)
 
-    # TASK PLAN
-    output += "TASK PLAN\n"
-    output += "-" * 40 + "\n"
+    outputs = []
 
     for task in todos:
-        output += f"{task['id']}. {task['title']}\n"
-        output += f"{task['description']}\n\n"
+        task_id = task["id"]
 
-    # RESEARCH RESULTS
-    output += "\nRESEARCH RESULTS\n"
-    output += "-" * 40 + "\n"
+        research = read_file(state, f"research_{task_id}.txt")
+        analysis = read_file(state, f"analysis_{task_id}.txt")
+        summary = read_file(state, f"summary_{task_id}.txt")
 
-    for task in todos:
+        if detailed:
+            content = f"""
+==================================================
+🧠 Task: {task['title']}
+==================================================
 
-        filepath = f"memory/research/task_{task['id']}.txt"
+📌 Research Output:
+{research}
 
-        content = read_file(state, filepath)
+--------------------------------------------------
 
-        if content:
-            output += f"\nFILE: {filepath}\n"
-            output += content + "\n\n"
+🔍 Analysis Output:
+{analysis}
 
-    # MEMORY TREE
-    output += "\nVIRTUAL MEMORY STRUCTURE\n"
-    output += "-" * 40 + "\n"
+--------------------------------------------------
 
-    memory_tree = build_memory_tree(
-        state.get("files", {})
-    )
+✅ Final Summary:
+{summary}
 
-    output += memory_tree + "\n\n"
+==================================================
+"""
+        else:
+            content = f"""
+🔹 {task['title']}
+{summary}
+"""
 
-    # EXECUTION TRACE
-    output += "\nEXECUTION TRACE\n"
-    output += "-" * 40 + "\n\n"
+        outputs.append(content)
 
-    for log in logs:
-        output += f"{log}\n"
+    final_answer = "\n".join(outputs)
 
-    # EXECUTION SUMMARY
-    output += "\nEXECUTION SUMMARY\n"
-    output += "-" * 40 + "\n"
-
-    validated = state.get("planning_meta", {}).get("validated", False)
-    completed = len(state.get("completed_tasks", []))
-
-    output += f"Validated Plan: {validated}\n"
-    output += f"Tasks Completed: {completed}\n"
-
-    write_file(
-        state,
-        "memory/synthesis/final_report.txt",
-        output
-    )
+    write_file(state, "memory/final_answer.txt", final_answer)
 
     return {
-        "final_output": output
+        "final_output": final_answer.strip()
     }

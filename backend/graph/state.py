@@ -58,3 +58,6 @@ class AgentState(TypedDict):
 
     # Final Result
     final_output: str
+
+    detailed: bool
+    
