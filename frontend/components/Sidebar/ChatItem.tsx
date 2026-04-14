@@ -23,7 +23,11 @@ export default function ChatItem({ chat }: Props) {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+  const [editing, setEditing] = useState(false);
+  const [newTitle, setNewTitle] = useState(chat.title);
+
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const isActive = currentChatId === chat.id;
 
@@ -45,6 +49,15 @@ export default function ChatItem({ chat }: Props) {
   }, [menuOpen]);
 
   /* =========================
+     AUTO FOCUS INPUT
+  ========================= */
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [editing]);
+
+  /* =========================
      RIGHT CLICK MENU
   ========================= */
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -58,7 +71,7 @@ export default function ChatItem({ chat }: Props) {
   };
 
   /* =========================
-     DELETE CHAT
+     DELETE
   ========================= */
   const handleDelete = () => {
     const updated = conversations.filter((c) => c.id !== chat.id);
@@ -72,12 +85,18 @@ export default function ChatItem({ chat }: Props) {
   };
 
   /* =========================
-     INLINE RENAME (NO PROMPT)
+     INLINE RENAME
   ========================= */
   const handleRename = () => {
-    const name = prompt("Rename chat", chat.title);
-    if (name) renameChat(chat.id, name);
+    setEditing(true);
     setMenuOpen(false);
+  };
+
+  const handleRenameSubmit = () => {
+    if (newTitle.trim()) {
+      renameChat(chat.id, newTitle.trim());
+    }
+    setEditing(false);
   };
 
   /* =========================
@@ -107,7 +126,21 @@ export default function ChatItem({ chat }: Props) {
       >
         <MessageSquare size={16} className="opacity-70" />
 
-        <span className="truncate flex-1">{chat.title}</span>
+        {/* 🔥 INLINE EDIT */}
+        {editing ? (
+          <input
+            ref={inputRef}
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            onBlur={handleRenameSubmit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleRenameSubmit();
+            }}
+            className="bg-transparent outline-none text-sm flex-1"
+          />
+        ) : (
+          <span className="truncate flex-1">{chat.title}</span>
+        )}
       </div>
 
       {/* CONTEXT MENU */}

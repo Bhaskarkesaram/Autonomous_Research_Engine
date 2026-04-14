@@ -1,20 +1,14 @@
-
-from fastapi import FastAPI, HTTPException, Form, Request
+from fastapi import FastAPI, HTTPException, Form, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pymongo import MongoClient
 from dotenv import load_dotenv
+from typing import List, Optional
 
-import PyPDF2
-import pytesseract
-from PIL import Image
-import io, time, json, os
+import json, os, asyncio, re
 
-from backend.ai.vector_db import store_document, search_similar
-from backend.ai.agents import route_agent, build_agent_prompt
-from backend.ai.fact_check import fact_check
-from backend.runtime.executor import DeepCognitiveExecutor
+from backend.graph.nodes import research_node
 
 # ==========================
 # ENV
@@ -25,6 +19,9 @@ DB_NAME = os.getenv("DB_NAME")
 
 app = FastAPI()
 
+# ==========================
+# CORS
+# ==========================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -58,131 +55,110 @@ def close_db():
 class ChatRequest(BaseModel):
     conversations: list
 
-# ==========================
-# EXECUTOR
-# ==========================
-executor = DeepCognitiveExecutor()
 latest_query = {}
 
 # ==========================
-# CLEAN OUTPUT FORMATTER
-# ==========================
-def format_output(text: str):
-    if not text:
-        return ""
-
-    # remove junk symbols
-    text = text.replace("=", "").replace("-", "")
-
-    # fix duplicate headings
-    text = text.replace("### 🔍 Insights ** ### 🔍 Key Insights", "### 🔍 Key Insights")
-    text = text.replace("### 🔍 Insights ### 🔍 Key Insights", "### 🔍 Key Insights")
-
-    # normalize headings
-    text = text.replace("📌 Research Output:", "\n### 📌 Overview\n")
-    text = text.replace("🔍 Analysis Output:", "\n### 🔍 Key Insights\n")
-    text = text.replace("Patterns", "\n### 📊 Patterns")
-    text = text.replace("Final Summary", "\n### ✅ Summary")
-
-    return text.strip()
-
-# ==========================
-# QUERY (FAST RESPONSE)
+# QUERY API
 # ==========================
 @app.post("/query")
-async def query(request: Request, query: str = Form(...)):
+async def query(
+    request: Request,
+    query: str = Form(...),
+    files: Optional[List[UploadFile]] = File(None)
+):
     try:
         user = "guest"
 
-        form = await request.form()
-        files = form.getlist("files")
+        if files:
+            for file in files:
+                await file.read()
 
-        # 📄 FILE PROCESSING
-        for file in files:
-            content = await file.read()
-
-            if file.filename.endswith(".pdf"):
-                reader = PyPDF2.PdfReader(io.BytesIO(content))
-                for page in reader.pages:
-                    text = page.extract_text() or ""
-                    store_document(text, user)
-
-            elif file.filename.endswith((".png", ".jpg", ".jpeg")):
-                image = Image.open(io.BytesIO(content))
-                text = pytesseract.image_to_string(image)
-                store_document(text, user)
-
-        # 🧠 AI PIPELINE
-        context_docs = search_similar(query, user)
-        agent = route_agent(query)
-
-        final_prompt = build_agent_prompt(agent, query, context_docs)
-        latest_query[user] = final_prompt
-
-        # ⚡ FAST PREVIEW
-        preview_result = executor.run(final_prompt, detailed=False)
-        preview = preview_result.get("final_output", "")
-
-        clean_preview = format_output(preview)
-
-        check = fact_check(preview, context_docs)
-
-        return {
-            "response": clean_preview[:200],
-            "confidence": check["confidence"],
-            "agent": agent,
-            "status": "streaming"
-        }
+        latest_query[user] = query
+        return {"status": "ok"}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 # ==========================
-# STREAM (NO MIXING + FAST)
+# STREAM API
 # ==========================
 @app.get("/stream")
 async def stream():
     user = "guest"
 
-    def generator():
-        query = latest_query.get(user)
-
-        # ✅ FIX 1: Don't send "No query found"
-        if not query:
-            return
-
+    async def event_generator():
         try:
-            # ✅ Run executor
-            result = executor.run(query, detailed=False)
+            query = latest_query.get(user, "")
+            latest_query[user] = ""
 
-            clean_text = format_output(result.get("final_output", ""))
+            if not query:
+                yield f"data: {json.dumps({'done': True})}\n\n"
+                return
 
-            # ✅ Preserve formatting
-            lines = clean_text.split("\n")
+            loop = asyncio.get_event_loop()
 
-            chunk_size = 3
+            result = await loop.run_in_executor(
+                None,
+                lambda: research_node({"user_request": query})
+            )
 
-            for i in range(0, len(lines), chunk_size):
-                chunk = "\n".join(lines[i:i + chunk_size])
+            final_text = result.get("final_output", "")
 
-                data = json.dumps({"token": chunk + "\n"})
-                yield f"data: {data}\n\n"
+            if not final_text:
+                final_text = "⚠ No response generated"
 
-            # ✅ Send done signal
+            # =========================
+            # 🔥 CLEAN FORMATTING ONLY
+            # =========================
+
+            # remove [1][2]
+            final_text = re.sub(r"\[\d+\]", "", final_text)
+
+            # section spacing (VERY IMPORTANT)
+            final_text = re.sub(r"(📌 Overview)", r"\n\n📌 Overview\n\n", final_text)
+            final_text = re.sub(r"(🔍 Key Concepts)", r"\n\n🔍 Key Concepts\n\n", final_text)
+            final_text = re.sub(r"(🧠 Detailed Explanation)", r"\n\n🧠 Detailed Explanation\n\n", final_text)
+            final_text = re.sub(r"(📊 Advantages)", r"\n\n📊 Advantages\n\n", final_text)
+            final_text = re.sub(r"(⚠️ Limitations)", r"\n\n⚠️ Limitations\n\n", final_text)
+            final_text = re.sub(r"(📈 Real-World Applications)", r"\n\n📈 Real-World Applications\n\n", final_text)
+            final_text = re.sub(r"(✅ Summary)", r"\n\n✅ Summary\n\n", final_text)
+            final_text = re.sub(r"(📚 Sources)", r"\n\n📚 Sources\n\n", final_text)
+
+            # bullet spacing
+            final_text = final_text.replace("• ", "\n• ")
+
+            # paragraph spacing
+            final_text = re.sub(r"\.\s+", ".\n\n", final_text)
+
+            # links spacing
+            final_text = re.sub(r"(https?://\S+)", r"\n\1", final_text)
+
+            # clean extra spaces
+            final_text = re.sub(r"\n{3,}", "\n\n", final_text)
+
+            final_text = final_text.strip()
+
+            # =========================
+            # RESPONSE
+            # =========================
+            yield f"data: {json.dumps({'token': final_text})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
 
         except Exception as e:
-            print("STREAM ERROR:", e)
-
-            yield f"data: {json.dumps({'token': 'Error occurred'})}\n\n"
+            yield f"data: {json.dumps({'token': '❌ Error: ' + str(e)})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
 
-        # ✅ FIX 2: Reset properly
-        latest_query[user] = None
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
 
-    return StreamingResponse(generator(), media_type="text/event-stream")
 # ==========================
-# CHAT STORAGE
+# SAVE CHAT
 # ==========================
 @app.post("/save-chat")
 async def save_chat(data: ChatRequest):
@@ -193,6 +169,9 @@ async def save_chat(data: ChatRequest):
     )
     return {"success": True}
 
+# ==========================
+# GET CHAT
+# ==========================
 @app.get("/get-chats")
 async def get_chats():
     doc = chat_collection.find_one({"user": "guest"})
@@ -203,4 +182,11 @@ async def get_chats():
 # ==========================
 @app.get("/")
 async def root():
-    return {"message": "🚀 Clean + Fast Backend Running"}
+    return {"message": "🚀 Groq Fast Research Backend Running"}
+
+# ==========================
+# HEALTH
+# ==========================
+@app.get("/health")
+def health():
+    return {"status": "ok"}

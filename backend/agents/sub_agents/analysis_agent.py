@@ -5,17 +5,20 @@ from backend.config.settings import DEBUG
 
 analysis_prompt = PromptTemplate(
     input_variables=["research_text"],
-template="""
-Analyze the following research deeply:
+    template="""
+You are an expert reasoning agent.
+
+Analyze the following information:
 
 {research_text}
 
-Provide:
-- Key insights
-- Patterns
-- Critical observations
+Your task:
+- Identify key insights
+- Detect patterns
+- Provide meaningful interpretation
+- Explain reasoning clearly
 
-Focus on reasoning, not summarizing.
+Focus on understanding, not just repeating content.
 """
 )
 

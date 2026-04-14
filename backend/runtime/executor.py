@@ -11,15 +11,9 @@ class DeepCognitiveExecutor:
         # Build the execution graph
         self.graph = build_graph()
 
-    def run(self, request: str,detailed: bool = False) -> dict:
+    def run(self, request: str, detailed: bool = False) -> dict:
         """
         Run the cognitive engine for a given user request.
-
-        Args:
-            request (str): User objective or request
-
-        Returns:
-            dict: Result state returned from the graph
         """
 
         # ================================
@@ -47,7 +41,7 @@ class DeepCognitiveExecutor:
             "files": {},
 
             # Reasoning / Execution Logs
-            "execution_log": [],
+            "execution_log": [],   # 👈 THIS IS IMPORTANT
 
             # Final Output
             "final_output": "",
@@ -60,4 +54,39 @@ class DeepCognitiveExecutor:
         # ================================
         result = self.graph.invoke(initial_state)
 
-        return result
+        # ================================
+        # 🔥 EXTRACT THINKING
+        # ================================
+        execution_log = result.get("execution_log", [])
+
+        # Convert log → readable thinking
+        thinking_text = ""
+
+        if execution_log:
+            formatted_logs = []
+            for step in execution_log:
+                # Handle dict logs or string logs
+                if isinstance(step, dict):
+                    msg = step.get("message") or str(step)
+                else:
+                    msg = str(step)
+
+                formatted_logs.append(f"→ {msg}")
+
+            thinking_text = "\n".join(formatted_logs)
+
+        # ================================
+        # FINAL OUTPUT
+        # ================================
+        final_output = result.get("final_output", "")
+
+        # ================================
+        # RETURN BASED ON MODE
+        # ================================
+        if detailed:
+            return {
+                "thinking": thinking_text,
+                "final_output": final_output
+            }
+        else:
+            return final_output

@@ -11,14 +11,17 @@ export default function TypingOutput() {
     ref.current?.scrollIntoView({ behavior: "smooth" });
   }, [stream]);
 
-return (
-  <div className="flex justify-start">
-    <div
-  className="bg-[#1e1e1e] px-4 py-3 rounded-xl max-w-2xl text-sm"
-  style={{ whiteSpace: "pre-wrap" }}
->
-  {stream || "Thinking..."}
-</div>
-  </div>
-);
+  if (!stream) return null;
+
+  return (
+    <div className="flex justify-start">
+      <div
+        ref={ref}
+        className="bg-[#1e1e1e] px-4 py-3 rounded-xl max-w-2xl text-sm"
+        style={{ whiteSpace: "pre-wrap" }}
+      >
+        {stream}
+      </div>
+    </div>
+  );
 }

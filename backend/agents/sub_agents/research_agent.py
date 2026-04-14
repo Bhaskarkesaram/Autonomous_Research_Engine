@@ -6,8 +6,8 @@ from backend.tools.search_tool import search_tool
 
 research_prompt = PromptTemplate(
     input_variables=["topic", "description"],
-template="""
-You are a healthcare AI research agent.
+    template="""
+You are an intelligent research assistant.
 
 TASK:
 {topic}
@@ -15,13 +15,14 @@ TASK:
 DESCRIPTION:
 {description}
 
-Provide detailed raw research information:
+Instructions:
+- Gather relevant and useful information
 - Explain concepts clearly
-- Include examples
-- Include technical details if possible
+- Include examples if helpful
+- Include technical details when needed
+- Avoid unnecessary verbosity
 
-DO NOT summarize.
-DO NOT compress.
+Focus on providing high-quality, useful content for further reasoning.
 """
 )
 

@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect } from "react";
@@ -9,31 +8,26 @@ import { useStore } from "../store/useStore";
 
 import QueryInput from "../components/QueryInput";
 import ChatContainer from "../components/Chat/ChatContainer";
-// ❗ Sidebar as client-only (fix hydration)
+
 const Sidebar = dynamic(() => import("../components/Sidebar/Sidebar"), {
   ssr: false,
 });
 
 import Header from "../components/UI/Header";
-import LogsPanel from "../components/LogsPanel";
-import AgentSelector from "../components/UI/AgentSelector";
-import FileUpload from "../components/UI/FileUpload";
 import Navbar from "../components/UI/Navbar";
 
 export default function Home() {
-  const { fetchChats, setError } = useStore();
+  const { setError } = useStore(); // ❌ removed fetchChats
 
   useEffect(() => {
-    const init = async () => {
-      try {
-        await fetchChats();
-      } catch (err) {
-        console.error("Init error:", err);
-        setError("Failed to load chats");
-      }
-    };
-    init();
-  }, []);
+    try {
+      // ✅ Zustand already loads from localStorage
+      console.log("App initialized");
+    } catch (err) {
+      console.error("Init error:", err);
+      setError("Failed to load chats");
+    }
+  }, [setError]);
 
   useStream();
 
@@ -59,4 +53,3 @@ export default function Home() {
     </div>
   );
 }
-

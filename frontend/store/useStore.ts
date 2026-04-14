@@ -1,4 +1,3 @@
-
 "use client";
 
 import { create } from "zustand";
@@ -7,7 +6,7 @@ import { create } from "zustand";
    TYPES
 ========================= */
 export type Message = {
-  id?: string;
+  id: string;
   role: "user" | "ai";
   content: string;
 };
@@ -22,8 +21,8 @@ type Conversation = {
   title: string;
   messages: Message[];
   folderId?: string;
-
   pinned?: boolean;
+  pinnedMessages?: Message[];
   createdAt?: number;
 };
 
@@ -36,9 +35,7 @@ type Log = {
 
 type State = {
   query: string;
-
   stream: string;
-  streamBuffer: string[];
 
   logs: Log[];
   history: string[];
@@ -52,19 +49,14 @@ type State = {
   selectedMessages: Message[];
   error: string | null;
 
-  /* 🔥 SIDEBAR */
   sidebarOpen: boolean;
-  toggleSidebar: () => void;
-  setSidebar: (v: boolean) => void;
+  thinking: string;
 
   setQuery: (q: string) => void;
-
   appendStream: (chunk: string) => void;
-  flushStream: () => void;
   clearStream: () => void;
 
   addLog: (msg: string, type?: Log["type"]) => void;
-
   saveHistory: (entry: string) => void;
 
   setCurrentChat: (id: string) => void;
@@ -75,9 +67,7 @@ type State = {
   replaceLastMessage: (text: string) => void;
 
   clearMessages: () => void;
-
   setError: (err: string | null) => void;
-
   setSearch: (s: string) => void;
 
   addFolder: (name: string) => void;
@@ -85,14 +75,26 @@ type State = {
 
   togglePin: (chatId: string) => void;
   deleteChat: (chatId: string) => void;
+  renameChat: (chatId: string, newTitle: string) => void;
 
-  fetchChats: () => Promise<void>;
-  saveChatsToBackend: () => Promise<void>;
+  pinMessage: (chatId: string, msg: Message) => void;
+  unpinMessage: (chatId: string, msg: Message) => void;
+  toggleSelectMessage: (msg: Message) => void;
+
+  toggleSidebar: () => void;
+  setSidebar: (v: boolean) => void;
+
+  setThinking: (text: string) => void;
 };
 
 /* =========================
-   LOCAL STORAGE
+   HELPERS
 ========================= */
+const uid = () =>
+  typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : Math.random().toString(36).substring(2);
+
 const load = () => {
   if (typeof window === "undefined") return null;
   try {
@@ -102,91 +104,73 @@ const load = () => {
   }
 };
 
-const getSidebarState = () => {
-  if (typeof window === "undefined") return true;
-  const saved = localStorage.getItem("sidebar-open");
-  return saved === null ? true : saved === "true";
+const save = (state: any) => {
+  if (typeof window !== "undefined") {
+    localStorage.setItem(
+      "chat-storage",
+      JSON.stringify({
+        conversations: state.conversations,
+        currentChatId: state.currentChatId,
+        folders: state.folders,
+      })
+    );
+  }
 };
 
-const saved = load();
+const saved = load() || {
+  conversations: [],
+  currentChatId: "",
+  folders: [],
+};
 
 /* =========================
    STORE
 ========================= */
-export const useStore = create<State>((set, get) => ({
+export const useStore = create<State>()((set, get) => ({
   query: "",
-
   stream: "",
-  streamBuffer: [],
 
   logs: [],
   history: [],
 
-  conversations: saved?.conversations || [],
-  currentChatId: saved?.currentChatId || "",
+  conversations: Array.isArray(saved.conversations)
+    ? saved.conversations
+    : [],
+  currentChatId: saved.currentChatId || "",
 
-  folders: saved?.folders || [],
+  folders: saved.folders || [],
   search: "",
 
   selectedMessages: [],
   error: null,
 
-  /* =========================
-     🔥 SIDEBAR
-  ========================= */
-  sidebarOpen: getSidebarState(),
+  sidebarOpen: true,
+  thinking: "",
 
   toggleSidebar: () => {
     const next = !get().sidebarOpen;
-
-    if (typeof window !== "undefined") {
-      localStorage.setItem("sidebar-open", String(next));
-    }
-
+    localStorage.setItem("sidebar-open", String(next));
     set({ sidebarOpen: next });
   },
 
   setSidebar: (v) => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("sidebar-open", String(v));
-    }
-
+    localStorage.setItem("sidebar-open", String(v));
     set({ sidebarOpen: v });
   },
 
-  /* =========================
-     STREAM
-  ========================= */
   appendStream: (chunk) =>
     set((s) => ({
-      streamBuffer: [...s.streamBuffer, chunk],
+      stream: s.stream + chunk,
     })),
 
-  flushStream: () =>
-    set((s) => {
-      if (!s.streamBuffer.length) return s;
+  clearStream: () => set({ stream: "" }),
 
-      return {
-        stream: s.stream + s.streamBuffer.join(""),
-        streamBuffer: [],
-      };
-    }),
-
-  clearStream: () =>
-    set({
-      stream: "",
-      streamBuffer: [],
-    }),
-
-  /* =========================
-     LOGS
-  ========================= */
   addLog: (message, type = "info") =>
     set((s) => ({
       logs: [
         ...s.logs,
         {
-          id: crypto.randomUUID(),
+          id: uid(),
           message,
           type,
           time: Date.now(),
@@ -194,9 +178,6 @@ export const useStore = create<State>((set, get) => ({
       ],
     })),
 
-  /* =========================
-     BASIC
-  ========================= */
   setQuery: (q) => set({ query: q }),
 
   saveHistory: (entry) =>
@@ -204,102 +185,168 @@ export const useStore = create<State>((set, get) => ({
 
   setCurrentChat: (id) => set({ currentChatId: id, stream: "" }),
 
-  /* =========================
-     CREATE CHAT
-  ========================= */
   createNewChat: () => {
-    const id = crypto.randomUUID();
+    const id = uid();
 
     const newChat: Conversation = {
       id,
       title: "New Chat",
       messages: [],
+      pinnedMessages: [],
       createdAt: Date.now(),
       pinned: false,
     };
 
-    set((s) => ({
-      conversations: [newChat, ...s.conversations],
-      currentChatId: id,
-    }));
+    set((s) => {
+      const updated = [newChat, ...s.conversations];
+
+      const newState = {
+        conversations: updated,
+        currentChatId: id,
+      };
+
+      save({ ...s, ...newState });
+      return newState;
+    });
   },
 
   addConversation: (conv) =>
-    set((s) => ({
-      conversations: [
+    set((s) => {
+      const updated = [
         {
           ...conv,
-          title: conv.title || "New Chat",
-          createdAt: conv.createdAt || Date.now(),
-          pinned: conv.pinned || false,
+          pinnedMessages: conv.pinnedMessages || [],
+          createdAt: Date.now(),
         },
         ...s.conversations,
-      ],
-      currentChatId: conv.id,
-    })),
+      ];
 
-  /* =========================
-     ADD MESSAGE
-  ========================= */
+      const newState = {
+        conversations: updated,
+        currentChatId: conv.id,
+      };
+
+      save({ ...s, ...newState });
+      return newState;
+    }),
+
+  /* 🔥 FIXED HERE */
   addMessageToCurrent: (msg) =>
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
+    set((s) => {
+      const updated = s.conversations.map((c) => {
         if (c.id !== s.currentChatId) return c;
 
-        const newMessages = [...c.messages, msg];
+        const safeMessages = Array.isArray(c.messages)
+          ? c.messages
+          : [];
 
-        let title = c.title;
-
-        if (c.messages.length === 0 && msg.role === "user") {
-          title =
-            msg.content.length > 40
-              ? msg.content.slice(0, 40) + "..."
-              : msg.content;
-        }
+        const isFirstMessage = safeMessages.length === 0;
 
         return {
           ...c,
-          messages: newMessages,
-          title,
+          title: isFirstMessage
+            ? msg.content.split(" ").slice(0, 6).join(" ")
+            : c.title,
+          messages: [
+            ...safeMessages,
+            {
+              id: msg.id || uid(),
+              role: msg.role as "user" | "ai", // 🔥 FIX
+              content: msg.content,
+            },
+          ],
         };
-      }),
-      stream: "",
-      streamBuffer: [],
-    })),
+      });
+
+      save({ ...s, conversations: updated });
+      return { conversations: updated };
+    }),
 
   replaceLastMessage: (text) =>
+    set((s) => {
+      const updated = s.conversations.map((c) => {
+        if (c.id !== s.currentChatId) return c;
+
+        const safeMessages = Array.isArray(c.messages)
+          ? c.messages
+          : [];
+
+        return {
+          ...c,
+          messages: [
+            ...safeMessages.slice(0, -1),
+            {
+              id: uid(),
+              role: "ai" as const,
+              content: text,
+            },
+          ],
+        };
+      });
+
+      save({ ...s, conversations: updated });
+      return { conversations: updated };
+    }),
+
+  renameChat: (chatId, newTitle) =>
+    set((s) => {
+      const updated = s.conversations.map((c) =>
+        c.id === chatId ? { ...c, title: newTitle } : c
+      );
+
+      save({ ...s, conversations: updated });
+      return { conversations: updated };
+    }),
+
+  pinMessage: (chatId, msg) =>
     set((s) => ({
       conversations: s.conversations.map((c) =>
-        c.id === s.currentChatId
+        c.id === chatId
           ? {
               ...c,
-              messages:
-                c.messages.length > 0
-                  ? [
-                      ...c.messages.slice(0, -1),
-                      { role: "ai", content: text },
-                    ]
-                  : c.messages,
+              pinnedMessages: [...(c.pinnedMessages || []), msg],
             }
           : c
       ),
     })),
 
+  unpinMessage: (chatId, msg) =>
+    set((s) => ({
+      conversations: s.conversations.map((c) =>
+        c.id === chatId
+          ? {
+              ...c,
+              pinnedMessages: (c.pinnedMessages || []).filter(
+                (m) => m.id !== msg.id
+              ),
+            }
+          : c
+      ),
+    })),
+
+  toggleSelectMessage: (msg) =>
+    set((s) => {
+      const exists = s.selectedMessages.some((m) => m.id === msg.id);
+
+      return {
+        selectedMessages: exists
+          ? s.selectedMessages.filter((m) => m.id !== msg.id)
+          : [...s.selectedMessages, msg],
+      };
+    }),
+
   clearMessages: () =>
     set({
       conversations: [],
       currentChatId: "",
-      stream: "",
-      streamBuffer: [],
     }),
 
   setError: (err) => set({ error: err }),
-
   setSearch: (s) => set({ search: s }),
 
   addFolder: (name) =>
     set((s) => ({
-      folders: [...s.folders, { id: crypto.randomUUID(), name }],
+      folders: [...s.folders, { id: uid(), name }],
     })),
 
   assignFolder: (chatId, folderId) =>
@@ -320,77 +367,9 @@ export const useStore = create<State>((set, get) => ({
     set((s) => {
       const updated = s.conversations.filter((c) => c.id !== chatId);
 
-      return {
-        conversations: updated,
-        currentChatId: updated[0]?.id || "",
-      };
+      save({ ...s, conversations: updated });
+      return { conversations: updated };
     }),
 
-  fetchChats: async () => {
-    try {
-      const res = await fetch("http://127.0.0.1:8000/get-chats");
-      const data = await res.json();
-
-      set({
-        conversations: data.conversations || [],
-        currentChatId: data.conversations?.[0]?.id || "",
-      });
-    } catch {
-      set({ error: "Failed to load chats" });
-    }
-  },
-
-  saveChatsToBackend: async () => {
-    try {
-      const state = get();
-
-      await fetch("http://127.0.0.1:8000/save-chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          conversations: state.conversations,
-        }),
-      });
-
-      get().addLog("Saved chats");
-    } catch {
-      get().addLog("Save failed", "error");
-    }
-  },
+  setThinking: (text) => set({ thinking: text }),
 }));
-
-/* =========================
-   AUTO SAVE
-========================= */
-let timer: ReturnType<typeof setTimeout>;
-
-useStore.subscribe((state) => {
-  if (typeof window === "undefined") return;
-
-  localStorage.setItem(
-    "chat-storage",
-    JSON.stringify({
-      conversations: state.conversations,
-      currentChatId: state.currentChatId,
-      folders: state.folders,
-    })
-  );
-
-  clearTimeout(timer);
-
-  timer = setTimeout(() => {
-    useStore.getState().saveChatsToBackend();
-  }, 700);
-});
-
-/* =========================
-   ⌨️ Ctrl + B Shortcut
-========================= */
-if (typeof window !== "undefined") {
-  window.addEventListener("keydown", (e) => {
-    if (e.ctrlKey && e.key.toLowerCase() === "b") {
-      e.preventDefault();
-      useStore.getState().toggleSidebar();
-    }
-  });
-}

@@ -1,23 +1,19 @@
-
 "use client";
 
 import { useState, useRef } from "react";
-import { useStore, Message } from "../store/useStore";
-import axios from "axios";
+import { useStore } from "../store/useStore";
+import { useStream } from "../hooks/useStream"; // 🔥 NEW
 import { Send, Mic, Upload, X } from "lucide-react";
 
 export default function QueryInput() {
   const {
     query,
     setQuery,
-    addConversation,
     addMessageToCurrent,
-    replaceLastMessage, // 🔥 IMPORTANT
-    conversations,
     setError,
-    clearStream,
-    addLog,
   } = useStore();
+
+  const { sendQuery } = useStream(); // 🔥 STREAM HOOK
 
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
@@ -25,11 +21,8 @@ export default function QueryInput() {
   const [dragActive, setDragActive] = useState(false);
 
   const recognitionRef = useRef<any>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
-  /* =========================
-     🎤 VOICE INPUT
-  ========================= */
+  /* 🎤 VOICE INPUT */
   const handleVoice = () => {
     const SpeechRecognition =
       (window as any).SpeechRecognition ||
@@ -56,18 +49,14 @@ export default function QueryInput() {
       recognitionRef.current.onend = () => setListening(false);
     }
 
-    if (listening) {
-      recognitionRef.current.stop();
-    } else {
-      recognitionRef.current.start();
-    }
+    listening
+      ? recognitionRef.current.stop()
+      : recognitionRef.current.start();
 
     setListening(!listening);
   };
 
-  /* =========================
-     📂 FILE HANDLING
-  ========================= */
+  /* 📂 FILE HANDLING */
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragActive(false);
@@ -85,92 +74,33 @@ export default function QueryInput() {
     setFiles((prev) => prev.filter((f) => f.name !== name));
   };
 
-  /* =========================
-     🚀 SEND QUERY (OPTIMIZED)
-  ========================= */
+  /* 🚀 SEND QUERY (🔥 FIXED VERSION) */
   const handleSubmit = async () => {
     if (!query.trim() || loading) return;
 
     const trimmed = query.trim();
 
-    const newMessage: Message = {
+    // 👤 USER MESSAGE
+    addMessageToCurrent({
+      id: crypto.randomUUID(),
       role: "user",
       content: trimmed,
-    };
-
-    /* 🧠 ADD USER MESSAGE */
-    if (conversations.length === 0) {
-      addConversation({
-        id: crypto.randomUUID(),
-        title: trimmed,
-        messages: [newMessage],
-      });
-    } else {
-      addMessageToCurrent(newMessage);
-    }
-
-    /* 🔥 RESET STREAM */
-    clearStream();
-
-    /* ⚡ INSTANT AI PLACEHOLDER */
-    addMessageToCurrent({
-      role: "ai",
-      content: "Thinking...",
     });
 
     setLoading(true);
     setError(null);
-    addLog("🚀 Sending query");
-
-    /* CANCEL PREVIOUS */
-    if (abortRef.current) {
-      abortRef.current.abort();
-    }
-
-    abortRef.current = new AbortController();
 
     try {
-      const formData = new FormData();
-      formData.append("query", trimmed);
-
-      files.forEach((file) => {
-        formData.append("files", file);
-      });
-
-      /* ⚡ FIRE REQUEST */
-      const res = await axios.post(
-        "http://127.0.0.1:8000/query",
-        formData,
-        {
-          signal: abortRef.current.signal,
-        }
-      );
-
-      /* ⚡ REPLACE WITH FAST PREVIEW */
-      if (res.data?.response) {
-        replaceLastMessage(res.data.response);
-      }
-
-      addLog("✅ Query sent");
-
-    } catch (err: any) {
-      if (axios.isCancel(err)) {
-        addLog("⚠ Request cancelled");
-      } else {
-        console.error(err);
-        setError("Server error. Try again.");
-        addLog("❌ Query failed");
-      }
+      // 🔥 ONLY ONE STREAM SYSTEM
+      await sendQuery(trimmed);
+    } catch {
+      console.log("Error sending query");
     } finally {
       setLoading(false);
       setQuery("");
-      setFiles([]);
     }
   };
 
-  /* =========================
-     ⌨️ ENTER SUPPORT
-  ========================= */
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") handleSubmit();
   };
@@ -190,8 +120,6 @@ export default function QueryInput() {
       onDragLeave={() => setDragActive(false)}
       onDrop={handleDrop}
     >
-
-      {/* FILE LIST */}
       {files.length > 0 && (
         <div className="flex flex-wrap gap-2 text-xs">
           {files.map((file) => (
@@ -208,10 +136,7 @@ export default function QueryInput() {
         </div>
       )}
 
-      {/* INPUT ROW */}
       <div className="flex items-center gap-2">
-
-        {/* UPLOAD */}
         <label className="p-2 bg-white/10 rounded-lg cursor-pointer">
           <Upload size={16} />
           <input
@@ -227,7 +152,6 @@ export default function QueryInput() {
           />
         </label>
 
-        {/* INPUT */}
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -236,7 +160,6 @@ export default function QueryInput() {
           placeholder="Ask anything..."
         />
 
-        {/* MIC */}
         <button
           onClick={handleVoice}
           className={`p-2 rounded-lg ${
@@ -246,7 +169,6 @@ export default function QueryInput() {
           <Mic size={16} />
         </button>
 
-        {/* SEND */}
         <button
           onClick={handleSubmit}
           disabled={loading}
@@ -258,7 +180,6 @@ export default function QueryInput() {
         >
           {loading ? "..." : <Send size={16} />}
         </button>
-
       </div>
     </div>
   );

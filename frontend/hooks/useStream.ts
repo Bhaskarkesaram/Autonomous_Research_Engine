@@ -1,23 +1,16 @@
-
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { useStore } from "../store/useStore";
 
 export const useStream = () => {
-  const { appendStream, addLog, addMessageToCurrent } = useStore();
+  const { appendStream, addLog } = useStore();
 
-  /* =========================
-     TYPED REFS (FIX)
-  ========================= */
   const eventRef = useRef<EventSource | null>(null);
-  const reconnectRef = useRef<NodeJS.Timeout | null>(null);
-
   const bufferRef = useRef<string>("");
   const fullResponse = useRef<string>("");
 
-  const retryCount = useRef<number>(0);
-  const flushInterval = useRef<NodeJS.Timeout | null>(null);
+  const flushInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /* =========================
      FLUSH BUFFER
@@ -30,7 +23,7 @@ export const useStream = () => {
 
       appendStream(bufferRef.current);
       bufferRef.current = "";
-    }, 50);
+    }, 40); // ⚡ slightly faster
   };
 
   const stopFlush = () => {
@@ -48,29 +41,31 @@ export const useStream = () => {
 
     addLog("🔌 Connecting SSE...");
 
-    const es = new EventSource("http://127.0.0.1:8000/stream");
+    const es = new EventSource("http://localhost:8000/stream");
     eventRef.current = es;
 
     startFlush();
 
     es.onopen = () => {
       addLog("✅ SSE Connected");
-      retryCount.current = 0;
     };
 
     es.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
 
+        // 🧠 THINKING
+        if (data.type === "thinking") {
+          useStore.getState().setThinking(data.content);
+        }
+
+        // ⚡ STREAM TOKENS
         if (data.token) {
           bufferRef.current += data.token;
           fullResponse.current += data.token;
         }
 
-        if (data.log) {
-          addLog(data.log);
-        }
-
+        // ✅ DONE
         if (data.done) {
           if (bufferRef.current) {
             appendStream(bufferRef.current);
@@ -80,13 +75,14 @@ export const useStream = () => {
           const finalText = fullResponse.current.trim();
 
           if (finalText) {
-            addMessageToCurrent({
-              role: "ai",
-              content: finalText,
-            });
+            useStore.getState().replaceLastMessage(finalText);
           }
 
           fullResponse.current = "";
+
+          es.close();
+          eventRef.current = null;
+          stopFlush();
         }
 
       } catch {
@@ -95,50 +91,43 @@ export const useStream = () => {
     };
 
     es.onerror = () => {
-      addLog("⚠ SSE error");
+      addLog("⚠ Stream error");
 
-      if (eventRef.current) {
-        eventRef.current.close();
-        eventRef.current = null;
-      }
-
+      es.close();
+      eventRef.current = null;
       stopFlush();
-
-      retryCount.current += 1;
-
-      const delay = Math.min(1000 * 2 ** retryCount.current, 10000);
-
-      addLog(`🔄 Reconnecting in ${delay}ms`);
-
-      reconnectRef.current = setTimeout(() => {
-        connect();
-      }, delay);
     };
   };
 
   /* =========================
-     EFFECT
+     SEND QUERY
   ========================= */
-  useEffect(() => {
-    connect();
+  const sendQuery = async (query: string) => {
+    try {
+      addLog("📤 Sending query...");
 
-    return () => {
-      addLog("🔌 Cleanup SSE");
+      // 🧠 RESET
+      useStore.getState().setThinking("");
+      useStore.getState().clearStream();
 
-      stopFlush();
+      // 🔥 SHOW INSTANT FEEDBACK (IMPORTANT)
+      useStore.getState().addMessageToCurrent({
+        id: crypto.randomUUID(),
+        role: "ai",
+        content: "🧠 Thinking...",
+      });
 
-      if (eventRef.current) {
-        eventRef.current.close();
-        eventRef.current = null;
-      }
+      await fetch("http://localhost:8000/query", {
+        method: "POST",
+        body: new URLSearchParams({ query }),
+      });
 
-      if (reconnectRef.current) {
-        clearTimeout(reconnectRef.current);
-        reconnectRef.current = null;
-      }
+      connect();
 
-      bufferRef.current = "";
-      fullResponse.current = "";
-    };
-  }, []);
+    } catch {
+      addLog("❌ Failed to send query");
+    }
+  };
+
+  return { sendQuery };
 };

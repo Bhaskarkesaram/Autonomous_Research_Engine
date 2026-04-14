@@ -1,9 +1,8 @@
-
 "use client";
 
 import { useStore } from "../../store/useStore";
 import ChatItem from "./ChatItem";
-import { PlusCircle, MessageSquare, Folder, Star, Trash2 } from "lucide-react";
+import { PlusCircle, MessageSquare, Folder } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 
@@ -28,16 +27,12 @@ export default function Sidebar() {
     setSearch,
     folders,
     addFolder,
-    assignFolder,
-    togglePin,
-    deleteChat,
-    sidebarOpen,   // 🔥 NEW
+    sidebarOpen,
   } = useStore();
 
   const [mounted, setMounted] = useState(false);
   const [localSearch, setLocalSearch] = useState("");
   const [collapsedFolders, setCollapsedFolders] = useState<string[]>([]);
-  const [dragOver, setDragOver] = useState<string | null>(null);
 
   const toggleFolder = (id: string) => {
     setCollapsedFolders((prev) =>
@@ -65,31 +60,18 @@ export default function Sidebar() {
     return () => clearTimeout(t);
   }, [localSearch, mounted, setSearch]);
 
+  // 🔥 FILTER + SORT (LATEST FIRST)
   const filtered = useMemo(() => {
     if (!mounted) return [];
 
-    return conversations.filter((c: ChatType) =>
-      (c.title || "").toLowerCase().includes(search.toLowerCase())
-    );
+    return conversations
+      .filter((c: ChatType) =>
+        (c.title || "").toLowerCase().includes(search.toLowerCase())
+      )
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [conversations, search, mounted]);
 
-  const now = new Date();
-
-  const today: ChatType[] = [];
-  const yesterday: ChatType[] = [];
-  const older: ChatType[] = [];
-
-  filtered.forEach((chat: ChatType) => {
-    const date = new Date(chat.createdAt || Date.now());
-
-    const diff =
-      (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
-
-    if (diff < 1) today.push(chat);
-    else if (diff < 2) yesterday.push(chat);
-    else older.push(chat);
-  });
-
+  // 🔥 GROUP BY FOLDER
   const grouped = useMemo(() => {
     if (!mounted) return {};
 
@@ -138,29 +120,11 @@ export default function Sidebar() {
         {filtered.some((c) => c.pinned) && (
           <div className="mb-3">
             <div className="text-xs text-yellow-400 mb-1">⭐ Pinned</div>
-            {filtered.filter((c) => c.pinned).map((chat) => (
-              <ChatItem key={chat.id} chat={chat} />
-            ))}
-          </div>
-        )}
-
-        {/* TODAY */}
-        {today.length > 0 && (
-          <div className="mb-3">
-            <div className="text-xs text-gray-400 mb-1">Today</div>
-            {today.filter(c => !c.pinned).map((chat) => (
-              <ChatItem key={chat.id} chat={chat} />
-            ))}
-          </div>
-        )}
-
-        {/* YESTERDAY */}
-        {yesterday.length > 0 && (
-          <div className="mb-3">
-            <div className="text-xs text-gray-400 mb-1">Yesterday</div>
-            {yesterday.filter(c => !c.pinned).map((chat) => (
-              <ChatItem key={chat.id} chat={chat} />
-            ))}
+            {filtered
+              .filter((c) => c.pinned)
+              .map((chat) => (
+                <ChatItem key={chat.id} chat={chat} />
+              ))}
           </div>
         )}
 
@@ -202,8 +166,15 @@ export default function Sidebar() {
           </button>
         </div>
 
-        {/* UNGROUPED */}
+        {/* 🔥 RECENT CHATS */}
         <div className="flex-1 overflow-y-auto space-y-2">
+
+          {(grouped["ungrouped"] || []).length > 0 && (
+            <div className="text-xs text-gray-400 mb-2 flex items-center gap-1">
+              🕒 Recent Chats
+            </div>
+          )}
+
           {(grouped["ungrouped"] || []).map((chat: ChatType) => (
             <ChatItem key={chat.id} chat={chat} />
           ))}
