@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Form, Request, UploadFile, File
+from fastapi import FastAPI, HTTPException, Form, Request, UploadFile, File, Depends, Query
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -6,12 +6,21 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 from typing import List, Optional
 
-import json, os, asyncio, re
+import json, os, asyncio, re, random
 
 from backend.graph.nodes import research_node
 from backend.tools.file_processor import extract_file_content
 from io import BytesIO
 
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+from jose import jwt, JWTError
+
+from passlib.context import CryptContext
+
+from datetime import datetime, timedelta
+
+from backend.services.sms_service import send_sms_otp
 # ==========================
 # ENV
 # ==========================
@@ -30,8 +39,110 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 
 MAX_QUERY_LENGTH = 5000
 
-USER_ID = "guest"
 
+# ==========================
+# AUTH SETTINGS
+# ==========================
+
+SECRET_KEY = os.getenv(
+    "JWT_SECRET",
+    "nexora-secret-key"
+)
+
+ALGORITHM = "HS256"
+
+security = HTTPBearer()
+
+
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto"
+)
+
+
+def hash_password(password):
+    return pwd_context.hash(password)
+
+
+def verify_password(
+    password,
+    hashed
+):
+    return pwd_context.verify(
+        password,
+        hashed
+    )
+
+
+def create_token(email):
+
+    payload = {
+        "sub": email,
+        "exp":
+        datetime.utcnow()
+        +
+        timedelta(days=7)
+    }
+
+    return jwt.encode(
+        payload,
+        SECRET_KEY,
+        algorithm=ALGORITHM
+    )
+
+
+def get_user(
+    credentials:
+    HTTPAuthorizationCredentials
+    =
+    Depends(security)
+):
+
+    try:
+
+        data = jwt.decode(
+            credentials.credentials,
+            SECRET_KEY,
+            algorithms=[ALGORITHM]
+        )
+
+        return data["sub"]
+
+    except JWTError:
+
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token"
+        )
+    
+
+# ==========================
+# STREAM TOKEN VERIFY
+# ==========================
+
+def verify_stream_token(
+    token: str
+):
+
+    try:
+
+        data = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM]
+        )
+
+        return data["sub"]
+
+
+    except JWTError:
+
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid stream token"
+        )
+    
+    
 # ==========================
 # CORS
 # ==========================
@@ -48,12 +159,17 @@ app.add_middleware(
 # ==========================
 client = None
 db = None
+
 chat_collection = None
+
+user_collection = None
+
+otp_collection = None
 
 
 @app.on_event("startup")
 def connect_db():
-    global client, db, chat_collection
+    global client, db, chat_collection, user_collection, otp_collection
 
     if not MONGO_URI:
         print("⚠ MONGO_URI not found")
@@ -75,6 +191,8 @@ def connect_db():
 
         db = client[DB_NAME]
         chat_collection = db["chats"]
+        user_collection = db["users"]
+        otp_collection = db["otp"]
 
         print("✅ MongoDB Connected")
 
@@ -94,8 +212,244 @@ def close_db():
 class ChatRequest(BaseModel):
     conversations: list
 
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    phone: str
+    password: str
+
+
+class VerifyOTPRequest(BaseModel):
+    email: str
+    otp: str
+
+
+class LoginRequest(BaseModel):
+    identifier: str
+    password: str
+
 latest_query = {}
 document_memory = {}
+
+@app.post("/send-otp")
+async def send_otp(
+    data: RegisterRequest
+):
+
+    existing = user_collection.find_one(
+        {
+            "$or":[
+                {"email":data.email},
+                {"phone":data.phone}
+            ]
+        }
+    )
+
+
+    if existing:
+        raise HTTPException(
+            400,
+            "User already exists"
+        )
+
+
+    otp = str(
+        random.randint(
+            100000,
+            999999
+        )
+    )
+
+
+    otp_collection.update_one(
+        {
+            "email":data.email
+        },
+        {
+            "$set":{
+                "name":data.name,
+                "email":data.email,
+                "phone":data.phone,
+                "password":
+                hash_password(
+                    data.password
+                ),
+                "otp":otp,
+                "expires":
+                datetime.utcnow()
+                +
+                timedelta(minutes=5)
+            }
+        },
+        upsert=True
+    )
+
+
+    send_sms_otp(
+      data.phone,
+      otp
+    )
+
+
+    return {
+        "message":
+        "OTP sent"
+    }
+
+@app.post("/verify-register")
+async def verify_register(
+    data:VerifyOTPRequest
+):
+
+
+    record = otp_collection.find_one(
+        {
+            "email":data.email
+        }
+    )
+
+
+    if not record:
+
+        raise HTTPException(
+            400,
+            "OTP expired"
+        )
+    
+    if record["expires"] < datetime.utcnow():
+
+     otp_collection.delete_one(
+        {
+            "email":
+            data.email
+        }
+     )
+
+
+     raise HTTPException(
+        400,
+        "OTP expired"
+     )
+
+
+    if record["otp"] != data.otp:
+
+        raise HTTPException(
+            400,
+            "Invalid OTP"
+        )
+
+
+
+    user_collection.insert_one(
+        {
+            "name":
+            record["name"],
+
+            "email":
+            record["email"],
+
+            "phone":
+            record["phone"],
+
+            "password":
+            record["password"],
+
+            "phoneVerified":
+            True,
+
+            "createdAt":
+            datetime.utcnow()
+        }
+    )
+
+
+
+    otp_collection.delete_one(
+        {
+            "email":
+            data.email
+        }
+    )
+
+
+    token=create_token(
+        record["email"]
+    )
+
+
+    return {
+
+        "name":
+        record["name"],
+
+        "email":
+        record["email"],
+
+        "token":
+        token
+
+    }
+
+
+@app.post("/login")
+async def login(
+    data:LoginRequest
+):
+
+
+    user = user_collection.find_one(
+        {
+            "$or":[
+
+                {
+                    "email":
+                    data.identifier
+                },
+
+                {
+                    "phone":
+                    data.identifier
+                }
+
+            ]
+        }
+    )
+
+
+
+    if(
+        not user
+        or
+        not verify_password(
+            data.password,
+            user["password"]
+        )
+    ):
+
+
+        raise HTTPException(
+            401,
+            "Invalid login"
+        )
+
+
+
+    return {
+
+        "name":
+        user["name"],
+
+        "email":
+        user["email"],
+
+        "token":
+        create_token(
+            user["email"]
+        )
+
+    }
+
 # ==========================
 # QUERY API
 # ==========================
@@ -103,12 +457,13 @@ document_memory = {}
 async def query(
     request: Request,
     query: str = Form(...),
-    files: Optional[List[UploadFile]] = File(None)
+    files: Optional[List[UploadFile]] = File(None),
+    user: str = Depends(get_user)
 ):
     print("FILES =", files)
 
     try:
-        user = USER_ID
+        
 
         if len(query) > MAX_QUERY_LENGTH:
             raise HTTPException(
@@ -203,8 +558,15 @@ async def query(
 # STREAM API
 # ==========================
 @app.get("/stream")
-async def stream():
-    user = USER_ID
+async def stream(
+    token: str = Query(...)
+):
+
+
+    user = verify_stream_token(
+        token
+    )
+
 
     async def event_generator():
         try:
@@ -392,7 +754,10 @@ async def stream():
 # SAVE CHAT
 # ==========================
 @app.post("/save-chat")
-async def save_chat(data: ChatRequest):
+async def save_chat(
+    data: ChatRequest,
+    user:str = Depends(get_user)
+):
 
     if not chat_collection:
         return {
@@ -402,7 +767,7 @@ async def save_chat(data: ChatRequest):
 
     try:
         chat_collection.update_one(
-            {"user": USER_ID},
+            {"user": user},
             {
                 "$set": {
                     "conversations": data.conversations
@@ -425,7 +790,9 @@ async def save_chat(data: ChatRequest):
 # GET CHAT
 # ==========================
 @app.get("/get-chats")
-async def get_chats():
+async def get_chats(
+    user:str = Depends(get_user)
+):
 
     if not chat_collection:
         return {
@@ -434,7 +801,7 @@ async def get_chats():
 
     try:
         doc = chat_collection.find_one(
-            {"user": USER_ID}
+            {"user": user}
         )
 
         return {

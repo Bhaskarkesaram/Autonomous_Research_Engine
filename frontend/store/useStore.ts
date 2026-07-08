@@ -40,6 +40,7 @@ type Log = {
 type State = {
   query: string;
   stream: string;
+  sources: string[];
 
   logs: Log[];
   history: string[];
@@ -57,6 +58,17 @@ type State = {
   thinking: string;
 
   totalQueries: number;
+
+
+// =========================
+// AUTH
+// =========================
+
+user: string | null;
+
+login: (email:string)=>void;
+
+logout: ()=>void;
 
 
  incrementQueries: () => void;
@@ -94,6 +106,14 @@ type State = {
   setSidebar: (v: boolean) => void;
 
   setThinking: (text: string) => void;
+
+setSources: (
+  sources: string[]
+) => void;
+
+syncToMongo: () => Promise<void>;
+
+loadFromMongo: () => Promise<void>;
 };
 
 /* =========================
@@ -145,6 +165,7 @@ const save = (state: any) => {
         folders: state.folders,
         history: state.history,
         totalQueries: state.totalQueries || 0,
+        user: state.user,
       })
     );
   }
@@ -156,6 +177,7 @@ const saved = load() || {
   folders: [],
   history: [],
   totalQueries: 0,
+  user:null,
 };
 
 /* =========================
@@ -164,6 +186,7 @@ const saved = load() || {
 export const useStore = create<State>()((set, get) => ({
   query: "",
   stream: "",
+  sources: [],
 
   logs: [],
   history: saved.history || [],
@@ -185,6 +208,9 @@ export const useStore = create<State>()((set, get) => ({
 
   totalQueries:
     saved.totalQueries || 0,
+
+   user:
+saved.user || null, 
 
   toggleSidebar: () => {
     const next = !get().sidebarOpen;
@@ -338,6 +364,7 @@ export const useStore = create<State>()((set, get) => ({
       });
 
       save({ ...s, conversations: updated });
+      setTimeout(() => {get().syncToMongo();}, 300);
       return { conversations: updated };
     }),
 
@@ -502,6 +529,7 @@ export const useStore = create<State>()((set, get) => ({
       const updated = s.conversations.filter((c) => c.id !== chatId);
 
       save({ ...s, conversations: updated });
+      setTimeout(() => { get().syncToMongo();},300);
       return { conversations: updated };
     }),
 
@@ -520,4 +548,213 @@ incrementQueries: () =>
 
     return newState;
   }),
+  setSources: (sources) =>
+
+  set({
+    sources,
+  }),
+
+  // =========================
+// AUTH
+// =========================
+
+
+login:(email)=>
+
+set((s)=>{
+
+
+const newState={
+
+user:email,
+
+};
+
+
+save({
+
+...s,
+
+...newState,
+
+});
+
+
+return newState;
+
+
+}),
+
+
+
+
+
+logout:()=>
+
+
+set((s)=>{
+
+
+localStorage.removeItem(
+"token"
+);
+
+
+const newState={
+
+user:null,
+
+conversations:[],
+
+currentChatId:"",
+
+stream:"",
+
+};
+
+
+save({
+
+...s,
+
+...newState,
+
+});
+
+
+return newState;
+
+
+}),
+
+// =========================
+// MONGODB SYNC
+// =========================
+
+syncToMongo: async () => {
+
+const state = get();
+
+try {
+
+await fetch(
+"http://localhost:8000/save-chat",
+{
+method:"POST",
+
+headers:{
+
+"Content-Type":"application/json",
+
+Authorization:
+`Bearer ${localStorage.getItem("token")}`,
+
+},
+
+body:JSON.stringify({
+
+conversations:
+state.conversations,
+
+}),
+
+}
+
+);
+
+
+state.addLog(
+"☁️ Synced with MongoDB",
+"success"
+);
+
+
+}
+
+catch(error){
+
+state.addLog(
+"❌ Mongo sync failed",
+"error"
+);
+
+}
+
+
+},
+
+
+
+
+
+loadFromMongo: async () => {
+
+
+try{
+
+
+const res =
+await fetch(
+"http://localhost:8000/get-chats",
+{
+
+headers:{
+
+Authorization:
+`Bearer ${localStorage.getItem("token")}`,
+
+},
+
+}
+);
+
+
+
+const data =
+await res.json();
+
+
+
+if(
+data.conversations
+){
+
+
+set({
+
+conversations:
+data.conversations,
+
+currentChatId:
+data.conversations[0]?.id || "",
+
+});
+
+
+}
+
+
+
+get().addLog(
+"☁️ Cloud chats loaded",
+"success"
+);
+
+
+
+}
+
+catch(error){
+
+
+get().addLog(
+"❌ Failed loading cloud chats",
+"error"
+);
+
+
+}
+
+
+},
 }));

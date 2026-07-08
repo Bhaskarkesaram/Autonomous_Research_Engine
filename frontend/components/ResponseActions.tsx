@@ -3,12 +3,13 @@
 import {
   Copy,
   RotateCcw,
-  Download,
   Share2,
   Check,
 } from "lucide-react";
 
 import { useState } from "react";
+import { useStream } from "../hooks/useStream";
+import ExportPDF from "./ExportPDF";
 
 
 type Props = {
@@ -20,166 +21,183 @@ export default function ResponseActions({
   content,
 }: Props) {
 
+  const [copied, setCopied] =
+    useState(false);
 
-const [copied, setCopied] =
-useState(false);
 
+  const { sendQuery } =
+    useStream();
 
-// =======================
-// COPY
-// =======================
 
-const copyResponse = async () => {
 
-await navigator.clipboard.writeText(
-  content
-);
+  // =======================
+  // COPY
+  // =======================
 
-setCopied(true);
+  const copyResponse = async () => {
 
+    await navigator.clipboard.writeText(
+      content
+    );
 
-setTimeout(
- () => setCopied(false),
- 1500
-);
+    setCopied(true);
 
-};
 
+    setTimeout(
+      () => setCopied(false),
+      1500
+    );
 
-// =======================
-// SHARE
-// =======================
+  };
 
-const shareResponse = async () => {
 
-if (navigator.share) {
 
-await navigator.share({
- text: content,
-});
+  // =======================
+  // REGENERATE
+  // =======================
 
-}
+  const regenerateResponse = () => {
 
-};
+    if (!content.trim()) return;
 
 
-// =======================
-// UI
-// =======================
+    sendQuery(
+      `Regenerate this answer:\n\n${content}`
+    );
 
-return (
+  };
 
-<div
-className="
-flex
-items-center
-gap-3
-mt-4
-text-zinc-500
-"
->
 
 
-{/* COPY */}
+  // =======================
+  // SHARE
+  // =======================
 
-<button
+  const shareResponse = async () => {
 
-onClick={copyResponse}
+    if (navigator.share) {
 
-title="Copy"
+      await navigator.share({
 
-className="
-hover:text-white
-transition
-"
+        title:
+          "Nexora AI Response",
 
->
+        text:
+          content,
 
-{
-copied ? (
+      });
 
-<Check
-size={16}
-className="text-green-400"
-/>
+    }
 
-)
+  };
 
-:
 
-(
 
-<Copy size={16}/>
 
-)
+  return (
 
-}
+    <div
+      className="
+      flex
+      items-center
+      gap-3
+      mt-4
+      text-zinc-500
+      "
+    >
 
-</button>
 
+      {/* COPY */}
 
+      <button
 
-{/* REGENERATE */}
+        onClick={copyResponse}
 
-<button
+        title="Copy"
 
-title="Regenerate"
+        className="
+        hover:text-white
+        transition
+        "
+      >
 
-className="
-hover:text-white
-transition
-"
+        {
+          copied ? (
 
->
+            <Check
+              size={16}
+              className="text-green-400"
+            />
 
-<RotateCcw size={16}/>
+          ) : (
 
-</button>
+            <Copy size={16}/>
 
+          )
+        }
 
 
-{/* EXPORT */}
+      </button>
 
-<button
 
-title="Export"
 
-className="
-hover:text-white
-transition
-"
 
->
+      {/* REGENERATE */}
 
-<Download size={16}/>
+      <button
 
-</button>
+        onClick={regenerateResponse}
 
+        title="Regenerate"
 
+        className="
+        hover:text-blue-400
+        transition
+        "
 
-{/* SHARE */}
+      >
 
-<button
+        <RotateCcw size={16}/>
 
-onClick={shareResponse}
+      </button>
 
-title="Share"
 
-className="
-hover:text-white
-transition
-"
 
->
 
-<Share2 size={16}/>
+      {/* EXPORT PDF */}
 
-</button>
+      <ExportPDF
 
+        content={content}
 
+      />
 
-</div>
 
-);
+
+
+      {/* SHARE */}
+
+      <button
+
+        onClick={shareResponse}
+
+        title="Share"
+
+        className="
+        hover:text-white
+        transition
+        "
+
+      >
+
+        <Share2 size={16}/>
+
+      </button>
+
+
+
+    </div>
+
+  );
 
 }
