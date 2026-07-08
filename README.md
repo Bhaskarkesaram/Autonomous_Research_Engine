@@ -113,13 +113,14 @@ COGNITIVE-ENGINE-MASTER/
 |   |   |    └── FileUpolad.tsx
 |   |   |    └── Header.tsx
 |   |   |    └── Navbar.tsx
-|   |   |    └── AgentFlow.tsx
-|   |   |    └── Auth.tsx
-|   |   |    └── ExportPDF.tsx
-|   |   |    └── HistoryPanel.tsx
-|   |   |    └── LogsPanel.tsx
-|   |   |    └── QueryInput.tsx
-|   |   |    └── TypingOutput.tsx
+|   |   └────── AgentFlow.tsx
+|   |   └────── Auth.tsx
+|   |   └────── ExportPDF.tsx
+|   |   └────── HistoryPanel.tsx
+|   |   └────── LogsPanel.tsx
+|   |   └────── QueryInput.tsx
+|   |   └────── TypingOutput.tsx
+|   |   
 │   ├── hooks/
 |   |     └── useStream.tsx
 │   ├── store/
