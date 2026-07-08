@@ -29,7 +29,11 @@ type Conversation = {
 type Log = {
   id: string;
   message: string;
-  type: "info" | "error" | "warn";
+  type:
+    | "info"
+    | "error"
+    | "warn"
+    | "success";
   time: number;
 };
 
@@ -51,6 +55,11 @@ type State = {
 
   sidebarOpen: boolean;
   thinking: string;
+
+  totalQueries: number;
+
+
+ incrementQueries: () => void;
 
   setQuery: (q: string) => void;
   appendStream: (chunk: string) => void;
@@ -91,9 +100,31 @@ type State = {
    HELPERS
 ========================= */
 const uid = () =>
-  typeof crypto !== "undefined" && crypto.randomUUID
+  typeof crypto !== "undefined" &&
+  crypto.randomUUID
     ? crypto.randomUUID()
-    : Math.random().toString(36).substring(2);
+    : `${Date.now()}-${Math.random()
+        .toString(36)
+        .substring(2, 9)}`;
+
+const generateTitle = (
+  text: string
+) => {
+  const clean = text.trim();
+
+  if (!clean) {
+    return "New Chat";
+  }
+
+  if (clean.length <= 40) {
+    return clean;
+  }
+
+  return (
+    clean.substring(0, 40) +
+    "..."
+  );
+};
 
 const load = () => {
   if (typeof window === "undefined") return null;
@@ -112,6 +143,8 @@ const save = (state: any) => {
         conversations: state.conversations,
         currentChatId: state.currentChatId,
         folders: state.folders,
+        history: state.history,
+        totalQueries: state.totalQueries || 0,
       })
     );
   }
@@ -121,6 +154,8 @@ const saved = load() || {
   conversations: [],
   currentChatId: "",
   folders: [],
+  history: [],
+  totalQueries: 0,
 };
 
 /* =========================
@@ -131,7 +166,7 @@ export const useStore = create<State>()((set, get) => ({
   stream: "",
 
   logs: [],
-  history: [],
+  history: saved.history || [],
 
   conversations: Array.isArray(saved.conversations)
     ? saved.conversations
@@ -145,7 +180,11 @@ export const useStore = create<State>()((set, get) => ({
   error: null,
 
   sidebarOpen: true,
+
   thinking: "",
+
+  totalQueries:
+    saved.totalQueries || 0,
 
   toggleSidebar: () => {
     const next = !get().sidebarOpen;
@@ -175,13 +214,27 @@ export const useStore = create<State>()((set, get) => ({
           type,
           time: Date.now(),
         },
-      ],
+      ].slice(-200),
     })),
 
   setQuery: (q) => set({ query: q }),
 
   saveHistory: (entry) =>
-    set((s) => ({ history: [entry, ...s.history] })),
+  set((s) => {
+    const updatedHistory = [
+      entry,
+      ...s.history,
+    ].slice(0, 100);
+
+    save({
+      ...s,
+      history: updatedHistory,
+    });
+
+    return {
+      history: updatedHistory,
+    };
+  }),
 
   setCurrentChat: (id) => set({ currentChatId: id, stream: "" }),
 
@@ -245,7 +298,7 @@ export const useStore = create<State>()((set, get) => ({
         return {
           ...c,
           title: isFirstMessage
-            ? msg.content.split(" ").slice(0, 6).join(" ")
+              ? generateTitle(msg.content)
             : c.title,
           messages: [
             ...safeMessages,
@@ -299,30 +352,54 @@ export const useStore = create<State>()((set, get) => ({
     }),
 
   pinMessage: (chatId, msg) =>
-    set((s) => ({
-      conversations: s.conversations.map((c) =>
+  set((s) => {
+    const updated =
+      s.conversations.map((c) =>
         c.id === chatId
           ? {
               ...c,
-              pinnedMessages: [...(c.pinnedMessages || []), msg],
+              pinnedMessages: [
+                ...(c.pinnedMessages || []),
+                msg,
+              ],
             }
           : c
-      ),
-    })),
+      );
+
+    save({
+      ...s,
+      conversations: updated,
+    });
+
+    return {
+      conversations: updated,
+    };
+  }),
 
   unpinMessage: (chatId, msg) =>
-    set((s) => ({
-      conversations: s.conversations.map((c) =>
+  set((s) => {
+    const updated =
+      s.conversations.map((c) =>
         c.id === chatId
           ? {
               ...c,
-              pinnedMessages: (c.pinnedMessages || []).filter(
-                (m) => m.id !== msg.id
-              ),
+              pinnedMessages:
+                (c.pinnedMessages || []).filter(
+                  (m) => m.id !== msg.id
+                ),
             }
           : c
-      ),
-    })),
+      );
+
+    save({
+      ...s,
+      conversations: updated,
+    });
+
+    return {
+      conversations: updated,
+    };
+  }),
 
   toggleSelectMessage: (msg) =>
     set((s) => {
@@ -336,32 +413,89 @@ export const useStore = create<State>()((set, get) => ({
     }),
 
   clearMessages: () =>
-    set({
+  set((s) => {
+    const newState = {
       conversations: [],
       currentChatId: "",
-    }),
+    };
+
+    save({
+      ...s,
+      ...newState,
+    });
+
+    return newState;
+  }),
 
   setError: (err) => set({ error: err }),
   setSearch: (s) => set({ search: s }),
 
   addFolder: (name) =>
-    set((s) => ({
-      folders: [...s.folders, { id: uid(), name }],
-    })),
+  set((s) => {
+    const updatedFolders = [
+      ...s.folders,
+      {
+        id: uid(),
+        name,
+      },
+    ];
 
-  assignFolder: (chatId, folderId) =>
-    set((s) => ({
-      conversations: s.conversations.map((c) =>
-        c.id === chatId ? { ...c, folderId } : c
-      ),
-    })),
+    save({
+      ...s,
+      folders: updatedFolders,
+    });
+
+    return {
+      folders: updatedFolders,
+    };
+  }),
+
+  assignFolder: (
+  chatId,
+  folderId
+) =>
+  set((s) => {
+    const updated =
+      s.conversations.map((c) =>
+        c.id === chatId
+          ? {
+              ...c,
+              folderId,
+            }
+          : c
+      );
+
+    save({
+      ...s,
+      conversations: updated,
+    });
+
+    return {
+      conversations: updated,
+    };
+  }),
 
   togglePin: (chatId) =>
-    set((s) => ({
-      conversations: s.conversations.map((c) =>
-        c.id === chatId ? { ...c, pinned: !c.pinned } : c
-      ),
-    })),
+  set((s) => {
+    const updated =
+      s.conversations.map((c) =>
+        c.id === chatId
+          ? {
+              ...c,
+              pinned: !c.pinned,
+            }
+          : c
+      );
+
+    save({
+      ...s,
+      conversations: updated,
+    });
+
+    return {
+      conversations: updated,
+    };
+  }),
 
   deleteChat: (chatId) =>
     set((s) => {
@@ -372,4 +506,18 @@ export const useStore = create<State>()((set, get) => ({
     }),
 
   setThinking: (text) => set({ thinking: text }),
+
+incrementQueries: () =>
+  set((s) => {
+    const newState = {
+      totalQueries: s.totalQueries + 1,
+    };
+
+    save({
+      ...s,
+      ...newState,
+    });
+
+    return newState;
+  }),
 }));

@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useStore } from "../../store/useStore";
@@ -7,8 +6,16 @@ import { useEffect, useRef, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import {
+  Bot,
+  User,
+  Sparkles,
+  Copy,
+  Check,
+} from "lucide-react";
+
 export default function ChatContainer() {
-  const { conversations, currentChatId, stream, error } = useStore();
+  const { conversations, currentChatId, stream, error, thinking } = useStore();
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -31,8 +38,10 @@ export default function ChatContainer() {
 
   useEffect(() => {
     if (!autoScroll) return;
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, stream]);
+    bottomRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
+  }, [messages.length, stream, autoScroll]);
 
   const handleScroll = () => {
     const el = containerRef.current;
@@ -44,86 +53,223 @@ export default function ChatContainer() {
     setAutoScroll(isNearBottom);
   };
 
-  const copyText = async (text: string, id: string) => {
+  const copyText = async (
+    text: string,
+    id: string
+  ) => {
     try {
       await navigator.clipboard.writeText(text);
+
       setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1500);
+
+      setTimeout(() => {
+        setCopiedId(null);
+      }, 1500);
     } catch {
       console.error("Copy failed");
     }
   };
 
-  /* =========================
-     ✅ FIXED MESSAGE RENDER
-  ========================= */
   const renderedMessages = useMemo(() => {
     if (!mounted) return null;
 
     return messages.map((msg, i) => {
       const id = `${i}-${msg.role}`;
 
-      const isLast = i === messages.length - 1;
+      const isLast =
+        i === messages.length - 1;
 
-      // 🔥 FIX: hide last AI message while streaming
-      if (isStreaming && msg.role === "ai" && isLast) {
+      if (
+        isStreaming &&
+        msg.role === "ai" &&
+        isLast
+      ) {
         return null;
       }
+
+      const isUser =
+        msg.role === "user";
 
       return (
         <motion.div
           key={id}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{
+            opacity: 0,
+            y: 10,
+          }}
+          animate={{
+            opacity: 1,
+            y: 0,
+          }}
+          transition={{
+            duration: 0.25,
+          }}
           className={`flex ${
-            msg.role === "user" ? "justify-end" : "justify-start"
+            isUser
+              ? "justify-end"
+              : "justify-start"
           }`}
         >
-          <div className="flex gap-2 max-w-[75%]">
+          <div className="flex gap-3 w-full max-w-5xl">
 
-            {msg.role === "ai" && (
-              <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-xs">
-                🤖
+            {!isUser && (
+              <div
+                className="
+                w-10
+                h-10
+                rounded-full
+                bg-gradient-to-br
+                from-emerald-500
+                to-green-600
+                flex
+                items-center
+                justify-center
+                shadow-lg
+                shrink-0
+              "
+              >
+                <Bot size={18} />
               </div>
             )}
 
             <div
-              className={`rounded-2xl px-4 py-3 text-sm relative group ${
-                msg.role === "user"
-                  ? "bg-blue-600 text-white"
-                  : "bg-[#1a1a1a] text-gray-200"
-              }`}
+              className={`
+                relative
+                group
+                rounded-3xl
+                px-5
+                py-4
+                shadow-xl
+                max-w-full
+                ${
+                  isUser
+                    ? `
+                      ml-auto
+                      bg-gradient-to-r
+                      from-blue-600
+                      to-blue-500
+                      text-white
+                    `
+                    : `
+                      bg-gradient-to-br
+                      from-zinc-900
+                      to-zinc-800
+                      border
+                      border-white/10
+                      text-zinc-100
+                    `
+                }
+              `}
             >
-              <div className="prose prose-invert max-w-none text-sm leading-relaxed">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {!isUser && (
+                <div className="flex items-center gap-2 mb-4">
+                  <Sparkles size={14} />
+
+                  <span
+                    className="
+                    text-xs
+                    font-medium
+                    text-zinc-400
+                  "
+                  >
+                    AI Research Engine
+                  </span>
+                </div>
+              )}
+
+              <div
+                className="
+                prose
+                prose-invert
+                max-w-none
+                text-sm
+                leading-7
+              "
+              >
+                <ReactMarkdown
+                  remarkPlugins={[
+                    remarkGfm,
+                  ]}
+                >
                   {msg.content}
                 </ReactMarkdown>
               </div>
 
-              {msg.role === "ai" && (
+              {!isUser && (
                 <button
-                  onClick={() => copyText(msg.content, id)}
-                  className="absolute top-1 right-2 text-xs opacity-0 group-hover:opacity-100 bg-black/50 px-2 py-0.5 rounded"
+                  onClick={() =>
+                    copyText(
+                      msg.content,
+                      id
+                    )
+                  }
+                  className="
+                    absolute
+                    top-3
+                    right-3
+                    opacity-0
+                    group-hover:opacity-100
+                    transition
+                    p-2
+                    rounded-lg
+                    bg-black/30
+                    hover:bg-black/50
+                  "
                 >
-                  {copiedId === id ? "✔" : "Copy"}
+                  {copiedId === id ? (
+                    <Check
+                      size={14}
+                    />
+                  ) : (
+                    <Copy
+                      size={14}
+                    />
+                  )}
                 </button>
               )}
             </div>
 
-            {msg.role === "user" && (
-              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-xs">
-                👤
+            {isUser && (
+              <div
+                className="
+                w-10
+                h-10
+                rounded-full
+                bg-gradient-to-br
+                from-blue-500
+                to-blue-700
+                flex
+                items-center
+                justify-center
+                shadow-lg
+                shrink-0
+              "
+              >
+                <User size={18} />
               </div>
             )}
           </div>
         </motion.div>
       );
     });
-  }, [messages, copiedId, mounted, isStreaming]);
+  }, [
+    messages,
+    copiedId,
+    mounted,
+    isStreaming,
+  ]);
 
   if (!mounted) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+      <div
+        className="
+        flex
+        items-center
+        justify-center
+        h-full
+        text-zinc-500
+      "
+      >
         Loading...
       </div>
     );
@@ -134,58 +280,136 @@ export default function ChatContainer() {
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto space-y-6 px-4 py-6"
+        className="
+          flex-1
+          overflow-y-auto
+          space-y-8
+          px-6
+          py-8
+        "
       >
-
-        {/* ERROR */}
         {error && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-xl">
+          <div
+            className="
+            bg-red-500/10
+            border
+            border-red-500/30
+            text-red-300
+            rounded-xl
+            px-4
+            py-3
+          "
+          >
             ⚠️ {error}
           </div>
         )}
 
-        {/* EMPTY */}
-        {messages.length === 0 && !isStreaming && (
-          <div className="flex items-center justify-center h-full text-gray-500 text-sm">
-            💬 Start a conversation
-          </div>
-        )}
+        {messages.length === 0 &&
+          !isStreaming && (
+            <div
+              className="
+              flex
+              items-center
+              justify-center
+              h-full
+              text-zinc-500
+            "
+            >
+             <div className="text-center">
+              <Sparkles
+               size={32}
+               className="mx-auto mb-3 text-emerald-400"
+              />
 
-        {/* MESSAGES */}
+              <h2 className="text-lg font-semibold">
+                Cognitive Research Engine
+              </h2>
+
+               <p className="text-zinc-500 mt-2">
+                  Ask a question to begin research.
+  </p>
+</div>
+            </div>
+          )}
+
         {renderedMessages}
 
-        {/* =========================
-           🔥 STREAM (ONLY ONE)
-        ========================= */}
         {isStreaming && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            initial={{
+              opacity: 0,
+            }}
+            animate={{
+              opacity: 1,
+            }}
             className="flex justify-start"
           >
-            <div className="flex gap-2 max-w-[75%]">
+            <div className="flex gap-3 max-w-5xl">
 
-              <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-xs">
-                🤖
+              <div
+                className="
+                w-10
+                h-10
+                rounded-full
+                bg-gradient-to-br
+                from-emerald-500
+                to-green-600
+                flex
+                items-center
+                justify-center
+                shadow-lg
+              "
+              >
+                <Bot size={18} />
               </div>
 
-              <div className="rounded-2xl px-4 py-3 text-sm bg-[#111] text-green-400">
-                <div className="prose prose-invert max-w-none text-sm leading-relaxed">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {stream + "▌"}
-                  </ReactMarkdown>
+              <div
+                className="
+                rounded-3xl
+                px-5
+                py-4
+                bg-gradient-to-br
+                from-zinc-900
+                to-zinc-800
+                border
+                border-emerald-500/20
+                shadow-xl
+                text-zinc-100
+              "
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <Sparkles
+                    size={14}
+                    className="animate-pulse"
+                  />
+
+                  <span className="text-xs text-zinc-400">
+                    {thinking || "Researching..."}
+                  </span>
+                </div>
+
+                <div
+                  className="
+                  prose
+                  prose-invert
+                  max-w-none
+                  text-sm
+                  leading-7
+                "
+                >
+                <ReactMarkdown
+                  remarkPlugins={[
+                    remarkGfm,
+                  ]}
+                >
+                  {stream
+                    ? `${stream} ▌`
+                    : "🔍 Initializing research..."}
+                </ReactMarkdown>
                 </div>
               </div>
-
             </div>
           </motion.div>
-        )}
-
-        {/* LOADING */}
-        {!isStreaming && messages.length > 0 && (
-          <div className="text-gray-500 text-sm animate-pulse">
-            AI is thinking...
-          </div>
         )}
 
         <div ref={bottomRef} />

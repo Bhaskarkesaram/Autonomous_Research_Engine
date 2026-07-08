@@ -4,7 +4,11 @@ import { useRef } from "react";
 import { useStore } from "../store/useStore";
 
 export const useStream = () => {
-  const { appendStream, addLog } = useStore();
+  const {
+  appendStream,
+  addLog,
+  incrementQueries,
+} = useStore();
 
   const eventRef = useRef<EventSource | null>(null);
   const bufferRef = useRef<string>("");
@@ -47,8 +51,17 @@ export const useStream = () => {
     startFlush();
 
     es.onopen = () => {
-      addLog("✅ SSE Connected");
-    };
+  addLog(
+    "✅ Research session started",
+    "success"
+  );
+
+  useStore
+    .getState()
+    .setThinking(
+      "🔍 Researching..."
+    );
+ };
 
     es.onmessage = (event: MessageEvent) => {
       try {
@@ -61,6 +74,26 @@ export const useStream = () => {
 
         // ⚡ STREAM TOKENS
         if (data.token) {
+
+          const current =
+          fullResponse.current.length;
+
+          if (current > 200) {
+            useStore
+               .getState()
+               .setThinking(
+                  "🧠 Analyzing..."
+               );
+          }
+
+          if (current > 800) {
+            useStore
+              .getState()
+              .setThinking(
+                "📝 Summarizing..."
+              );
+          }  
+
           bufferRef.current += data.token;
           fullResponse.current += data.token;
         }
@@ -78,6 +111,15 @@ export const useStream = () => {
             useStore.getState().replaceLastMessage(finalText);
           }
 
+          useStore
+            .getState()
+            .setThinking("");
+
+          addLog(
+            "✅ Research Complete",
+            "success"
+         );
+
           fullResponse.current = "";
 
           es.close();
@@ -85,27 +127,48 @@ export const useStream = () => {
           stopFlush();
         }
 
-      } catch {
-        addLog("❌ Parse error");
-      }
+      } catch (error) {
+  addLog(
+    error instanceof Error
+      ? `❌ ${error.message}`
+      : "❌ Parse error",
+    "error"
+  );
+}
     };
 
     es.onerror = () => {
-      addLog("⚠ Stream error");
 
-      es.close();
+      useStore
+       .getState()
+       .setThinking("");
+
+      addLog(
+        "❌ Stream Error",
+        "error"
+      );
+
+    es.close();
       eventRef.current = null;
       stopFlush();
     };
   };
 
-  /* =========================
-     SEND QUERY
-  ========================= */
-  const sendQuery = async (query: string) => {
+
+    /* =========================
+      SEND QUERY
+    ========================= */
+    const sendQuery = async (query: string, files: File[] = []) => {
     try {
       addLog("📤 Sending query...");
 
+      incrementQueries();
+
+      addLog(
+       "📤 Query submitted",
+       "info"
+     );
+ 
       // 🧠 RESET
       useStore.getState().setThinking("");
       useStore.getState().clearStream();
@@ -117,16 +180,54 @@ export const useStream = () => {
         content: "🧠 Thinking...",
       });
 
-      await fetch("http://localhost:8000/query", {
-        method: "POST",
-        body: new URLSearchParams({ query }),
-      });
+      useStore
+  .getState()
+  .setThinking(
+    "🔍 Researching..."
+  );
+
+  const formData = new FormData();
+
+formData.append(
+  "query",
+  query
+);
+
+files.forEach((file) => {
+  formData.append(
+    "files",
+    file
+  );
+});
+
+const response = await fetch(
+  "http://localhost:8000/query",
+  {
+    method: "POST",
+    body: formData,
+  }
+);
+
+if (!response.ok) {
+  throw new Error(
+    "Backend rejected request"
+  );
+}
 
       connect();
 
-    } catch {
-      addLog("❌ Failed to send query");
-    }
+    } catch (error) {
+  useStore
+    .getState()
+    .setThinking("");
+
+  addLog(
+    error instanceof Error
+      ? `❌ ${error.message}`
+      : "❌ Failed to send query",
+    "error"
+  );
+}
   };
 
   return { sendQuery };

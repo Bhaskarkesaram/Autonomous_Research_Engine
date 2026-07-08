@@ -56,6 +56,20 @@ class AgentState(TypedDict):
     # ✅ Agent Reasoning Trace
     execution_log: List[str]
 
+    # =========================
+    # RESEARCH WORKFLOW
+    # =========================
+
+    research_plan: str
+
+    search_results: List[Dict]
+
+    validated_results: List[Dict]
+
+    sources: List[str]
+
+    thinking_stage: str
+
     # Final Result
     final_output: str
 

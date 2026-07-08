@@ -2,8 +2,16 @@
 
 import { useState, useRef } from "react";
 import { useStore } from "../store/useStore";
-import { useStream } from "../hooks/useStream"; // 🔥 NEW
-import { Send, Mic, Upload, X } from "lucide-react";
+import { useStream } from "../hooks/useStream";
+
+import {
+  Send,
+  Mic,
+  Upload,
+  X,
+  Sparkles,
+  Paperclip,
+} from "lucide-react";
 
 export default function QueryInput() {
   const {
@@ -13,7 +21,7 @@ export default function QueryInput() {
     setError,
   } = useStore();
 
-  const { sendQuery } = useStream(); // 🔥 STREAM HOOK
+  const { sendQuery } = useStream();
 
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
@@ -22,7 +30,6 @@ export default function QueryInput() {
 
   const recognitionRef = useRef<any>(null);
 
-  /* 🎤 VOICE INPUT */
   const handleVoice = () => {
     const SpeechRecognition =
       (window as any).SpeechRecognition ||
@@ -34,19 +41,29 @@ export default function QueryInput() {
     }
 
     if (!recognitionRef.current) {
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.lang = "en-US";
+      recognitionRef.current =
+        new SpeechRecognition();
 
-      recognitionRef.current.onresult = (e: any) => {
-        setQuery(e.results[0][0].transcript);
-      };
+      recognitionRef.current.lang =
+        "en-US";
 
-      recognitionRef.current.onerror = () => {
-        setError("Voice recognition error");
-        setListening(false);
-      };
+      recognitionRef.current.onresult =
+        (e: any) => {
+          setQuery(
+            e.results[0][0].transcript
+          );
+        };
 
-      recognitionRef.current.onend = () => setListening(false);
+      recognitionRef.current.onerror =
+        () => {
+          setError(
+            "Voice recognition error"
+          );
+          setListening(false);
+        };
+
+      recognitionRef.current.onend =
+        () => setListening(false);
     }
 
     listening
@@ -56,79 +73,146 @@ export default function QueryInput() {
     setListening(!listening);
   };
 
-  /* 📂 FILE HANDLING */
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (
+    e: React.DragEvent
+  ) => {
     e.preventDefault();
+
     setDragActive(false);
 
-    const droppedFiles = Array.from(e.dataTransfer.files);
+    const droppedFiles =
+      Array.from(
+        e.dataTransfer.files
+      );
 
-    const uniqueFiles = droppedFiles.filter(
-      (f) => !files.some((existing) => existing.name === f.name)
+    const uniqueFiles =
+      droppedFiles.filter(
+        (f) =>
+          !files.some(
+            (existing) =>
+              existing.name === f.name
+          )
+      );
+
+    setFiles((prev) => [
+      ...prev,
+      ...uniqueFiles,
+    ]);
+  };
+
+  const removeFile = (
+    name: string
+  ) => {
+    setFiles((prev) =>
+      prev.filter(
+        (f) => f.name !== name
+      )
     );
-
-    setFiles((prev) => [...prev, ...uniqueFiles]);
   };
 
-  const removeFile = (name: string) => {
-    setFiles((prev) => prev.filter((f) => f.name !== name));
-  };
+  const handleSubmit =
+    async () => {
+      if (
+        !query.trim() ||
+        loading
+      )
+        return;
 
-  /* 🚀 SEND QUERY (🔥 FIXED VERSION) */
-  const handleSubmit = async () => {
-    if (!query.trim() || loading) return;
+      const trimmed =
+        query.trim();
 
-    const trimmed = query.trim();
+      addMessageToCurrent({
+        id: crypto.randomUUID(),
+        role: "user",
+        content: trimmed,
+      });
 
-    // 👤 USER MESSAGE
-    addMessageToCurrent({
-      id: crypto.randomUUID(),
-      role: "user",
-      content: trimmed,
-    });
+      setLoading(true);
+      setError(null);
 
-    setLoading(true);
-    setError(null);
+      try {
+        await sendQuery(trimmed, files);
+      } catch {
+        console.error(
+          "Error sending query"
+        );
+      } finally {
+        setLoading(false);
+        setQuery("");
+        setFiles([]);
+      }
+    };
 
-    try {
-      // 🔥 ONLY ONE STREAM SYSTEM
-      await sendQuery(trimmed);
-    } catch {
-      console.log("Error sending query");
-    } finally {
-      setLoading(false);
-      setQuery("");
+  const handleKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (
+      e.key === "Enter" &&
+      !e.shiftKey
+    ) {
+      e.preventDefault();
+      handleSubmit();
     }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") handleSubmit();
   };
 
   return (
     <div
-      className={`flex flex-col gap-2 p-3 rounded-2xl border transition-all
+      className={`
+      rounded-3xl
+      border
+      backdrop-blur-xl
+      transition-all
+      shadow-2xl
       ${
         dragActive
-          ? "border-blue-500 bg-blue-500/10 scale-[1.01]"
-          : "border-white/10 bg-white/5"
-      }`}
+          ? `
+            border-blue-500
+            bg-blue-500/10
+            scale-[1.01]
+          `
+          : `
+            border-white/10
+            bg-zinc-900/70
+          `
+      }
+    `}
       onDragOver={(e) => {
         e.preventDefault();
         setDragActive(true);
       }}
-      onDragLeave={() => setDragActive(false)}
+      onDragLeave={() =>
+        setDragActive(false)
+      }
       onDrop={handleDrop}
     >
       {files.length > 0 && (
-        <div className="flex flex-wrap gap-2 text-xs">
+        <div className="flex flex-wrap gap-2 p-3 border-b border-white/10">
           {files.map((file) => (
             <div
               key={file.name}
-              className="flex items-center gap-1 bg-green-500/10 px-2 py-1 rounded"
+              className="
+              flex
+              items-center
+              gap-2
+              px-3
+              py-1
+              rounded-full
+              bg-emerald-500/10
+              text-xs
+              border
+              border-emerald-500/20
+            "
             >
-              📎 {file.name}
-              <button onClick={() => removeFile(file.name)}>
+              <Paperclip size={12} />
+              {file.name}
+
+              <button
+                onClick={() =>
+                  removeFile(
+                    file.name
+                  )
+                }
+              >
                 <X size={12} />
               </button>
             </div>
@@ -136,50 +220,146 @@ export default function QueryInput() {
         </div>
       )}
 
-      <div className="flex items-center gap-2">
-        <label className="p-2 bg-white/10 rounded-lg cursor-pointer">
-          <Upload size={16} />
+      <div className="px-4 py-3">
+
+        <div className="flex items-center gap-3">
+
+          <label
+            className="
+            p-2
+            rounded-xl
+            bg-white/5
+            hover:bg-white/10
+            cursor-pointer
+            transition
+          "
+          >
+            <Upload size={18} />
+
+            <input
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                const selected =
+                  e.target.files
+                    ? Array.from(
+                        e.target.files
+                      )
+                    : [];
+
+                setFiles((prev) => [
+                  ...prev,
+                  ...selected,
+                ]);
+              }}
+            />
+          </label>
+
           <input
-            type="file"
-            multiple
-            hidden
-            onChange={(e) => {
-              const selected = e.target.files
-                ? Array.from(e.target.files)
-                : [];
-              setFiles((prev) => [...prev, ...selected]);
-            }}
+            value={query}
+            onChange={(e) =>
+              setQuery(
+                e.target.value
+              )
+            }
+            onKeyDown={
+              handleKeyDown
+            }
+            placeholder="Ask anything, upload files, or start research..."
+            className="
+            flex-1
+            bg-transparent
+            outline-none
+            text-sm
+            placeholder:text-zinc-500
+          "
           />
-        </label>
 
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={handleKeyDown}
-          className="flex-1 bg-transparent outline-none text-sm"
-          placeholder="Ask anything..."
-        />
+          <button
+            onClick={
+              handleVoice
+            }
+            className={`
+            p-2
+            rounded-xl
+            transition
+            ${
+              listening
+                ? "bg-red-500"
+                : "bg-white/5 hover:bg-white/10"
+            }
+          `}
+          >
+            <Mic size={18} />
+          </button>
 
-        <button
-          onClick={handleVoice}
-          className={`p-2 rounded-lg ${
-            listening ? "bg-red-500" : "bg-white/10"
-          }`}
+          <button
+            onClick={
+              handleSubmit
+            }
+            disabled={loading}
+            className={`
+            flex
+            items-center
+            gap-2
+            px-4
+            py-2
+            rounded-xl
+            transition
+            ${
+              loading
+                ? `
+                  bg-blue-500/40
+                  cursor-not-allowed
+                `
+                : `
+                  bg-gradient-to-r
+                  from-blue-600
+                  to-blue-500
+                  hover:from-blue-500
+                  hover:to-blue-400
+                `
+            }
+          `}
+          >
+            {loading ? (
+              <>
+                <Sparkles
+                  size={16}
+                  className="animate-spin"
+                />
+              </>
+            ) : (
+              <>
+                <Send size={16} />
+              </>
+            )}
+          </button>
+        </div>
+
+        <div
+          className="
+          mt-3
+          text-xs
+          text-zinc-500
+          flex
+          gap-4
+        "
         >
-          <Mic size={16} />
-        </button>
+          <span>
+            ↵ Enter to send
+          </span>
 
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          className={`px-3 py-1 rounded-lg ${
-            loading
-              ? "bg-blue-600/50 cursor-not-allowed"
-              : "bg-blue-600 hover:bg-blue-700"
-          }`}
-        >
-          {loading ? "..." : <Send size={16} />}
-        </button>
+          <span>
+            🎤 Voice input
+          </span>
+
+          <span>
+            📎 File upload
+          </span>
+        </div>
+
       </div>
     </div>
   );

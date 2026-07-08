@@ -9,15 +9,28 @@ from typing import List, Optional
 import json, os, asyncio, re
 
 from backend.graph.nodes import research_node
+from backend.tools.file_processor import extract_file_content
+from io import BytesIO
 
 # ==========================
 # ENV
 # ==========================
 load_dotenv()
-MONGO_URI = os.getenv("MONGO_URI")
+MONGO_URI = os.getenv("MONGODB_URI")
 DB_NAME = os.getenv("DB_NAME")
 
 app = FastAPI()
+
+
+# ==========================
+# SETTINGS
+# ==========================
+
+MAX_FILE_SIZE = 10 * 1024 * 1024
+
+MAX_QUERY_LENGTH = 5000
+
+USER_ID = "guest"
 
 # ==========================
 # CORS
@@ -37,18 +50,44 @@ client = None
 db = None
 chat_collection = None
 
+
 @app.on_event("startup")
 def connect_db():
     global client, db, chat_collection
-    client = MongoClient(MONGO_URI, maxPoolSize=5)
-    db = client[DB_NAME]
-    chat_collection = db["chats"]
+
+    if not MONGO_URI:
+        print("⚠ MONGO_URI not found")
+        return
+
+    if not DB_NAME:
+        print("⚠ DB_NAME not found")
+        return
+
+    try:
+        client = MongoClient(
+            MONGO_URI,
+            maxPoolSize=5,
+            serverSelectionTimeoutMS=5000
+        )
+
+        # Verify connection
+        client.admin.command("ping")
+
+        db = client[DB_NAME]
+        chat_collection = db["chats"]
+
+        print("✅ MongoDB Connected")
+
+    except Exception as e:
+        print("❌ MongoDB Connection Error:", str(e))
+
 
 @app.on_event("shutdown")
 def close_db():
+    global client
+
     if client:
         client.close()
-
 # ==========================
 # MODEL
 # ==========================
@@ -56,7 +95,7 @@ class ChatRequest(BaseModel):
     conversations: list
 
 latest_query = {}
-
+document_memory = {}
 # ==========================
 # QUERY API
 # ==========================
@@ -66,86 +105,278 @@ async def query(
     query: str = Form(...),
     files: Optional[List[UploadFile]] = File(None)
 ):
+    print("FILES =", files)
+
     try:
-        user = "guest"
+        user = USER_ID
+
+        if len(query) > MAX_QUERY_LENGTH:
+            raise HTTPException(
+                status_code=400,
+                detail="Query exceeds maximum length"
+            )
+
+        documents = []
 
         if files:
             for file in files:
-                await file.read()
 
-        latest_query[user] = query
-        return {"status": "ok"}
+                raw = await file.read()
+
+                if len(raw) > MAX_FILE_SIZE:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"{file.filename} exceeds size limit"
+                    )
+
+                extracted = extract_file_content(
+                    file.filename,
+                    BytesIO(raw)
+                )
+
+                documents.append({
+                    "name": file.filename,
+                    "content": extracted
+                })
+
+                print(
+                    f"✅ Processed File: {file.filename}"
+                )
+
+        print("DOCUMENTS =", documents)
+
+        # ==================================
+        # CLEAR DOCUMENT MEMORY COMMAND
+        # ==================================
+        if query.lower() in [
+            "clear document",
+            "clear documents",
+            "forget document",
+            "forget documents"
+        ]:
+
+            document_memory[user] = []
+
+            latest_query[user] = {
+                "query": query,
+                "documents": []
+            }
+
+            print("🗑 Document memory cleared")
+
+            return {
+                "status": "ok"
+            }
+
+        # ==================================
+        # SAVE DOCUMENTS TO MEMORY
+        # ==================================
+        if documents:
+
+            document_memory[user] = documents
+
+            print(
+                "📄 Saved documents to memory:",
+                len(documents)
+            )
+
+        latest_query[user] = {
+            "query": query,
+            "documents": documents
+        }
+
+        return {
+            "status": "ok"
+        }
+
+    except HTTPException:
+        raise
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print("QUERY ERROR:", str(e))
 
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 # ==========================
 # STREAM API
 # ==========================
 @app.get("/stream")
 async def stream():
-    user = "guest"
+    user = USER_ID
 
     async def event_generator():
         try:
-            query = latest_query.get(user, "")
-            latest_query[user] = ""
+            data = latest_query.get(user, {})
+            
+            query = data.get("query", "")
+            documents = data.get("documents", [])
 
-            if not query:
+            # ==================================
+            # USE SAVED DOCUMENT MEMORY
+            # ==================================
+            if not documents:
+
+                documents = document_memory.get(user, [])
+
+            latest_query[user] = {}
+
+            print("STREAM DOCUMENTS =", len(documents))
+            
+
+            if not query and not documents:
                 yield f"data: {json.dumps({'done': True})}\n\n"
                 return
 
-            loop = asyncio.get_event_loop()
 
+            # =========================
+            # AGENT STATUS
+            # =========================
+
+            yield f"data: {json.dumps({'type':'thinking','content':'🧠 Planning Research...'})}\n\n"
+            await asyncio.sleep(0.2)
+
+            yield f"data: {json.dumps({'type':'thinking','content':'🌐 Searching Sources...'})}\n\n"
+            await asyncio.sleep(0.2)
+
+            yield f"data: {json.dumps({'type':'thinking','content':'✅ Validating Sources...'})}\n\n"
+            await asyncio.sleep(0.2)
+
+            yield f"data: {json.dumps({'type':'thinking','content':'📊 Generating Report...'})}\n\n"
+            await asyncio.sleep(0.2)
+
+            loop = asyncio.get_running_loop()
+
+            print("STREAM DOCUMENTS =", documents)
             result = await loop.run_in_executor(
                 None,
-                lambda: research_node({"user_request": query})
+                lambda: research_node(
+                    {
+                        "user_request": query,
+                        "documents": documents,
+                        "execution_log": []
+                    }
+                )
             )
 
-            final_text = result.get("final_output", "")
+            final_text = result.get(
+                "final_output",
+                ""
+            )
 
             if not final_text:
                 final_text = "⚠ No response generated"
 
             # =========================
-            # 🔥 CLEAN FORMATTING ONLY
+            # CLEAN FORMATTING
             # =========================
 
-            # remove [1][2]
-            final_text = re.sub(r"\[\d+\]", "", final_text)
+            final_text = re.sub(
+                r"\[\d+\]",
+                "",
+                final_text
+            )
 
-            # section spacing (VERY IMPORTANT)
-            final_text = re.sub(r"(📌 Overview)", r"\n\n📌 Overview\n\n", final_text)
-            final_text = re.sub(r"(🔍 Key Concepts)", r"\n\n🔍 Key Concepts\n\n", final_text)
-            final_text = re.sub(r"(🧠 Detailed Explanation)", r"\n\n🧠 Detailed Explanation\n\n", final_text)
-            final_text = re.sub(r"(📊 Advantages)", r"\n\n📊 Advantages\n\n", final_text)
-            final_text = re.sub(r"(⚠️ Limitations)", r"\n\n⚠️ Limitations\n\n", final_text)
-            final_text = re.sub(r"(📈 Real-World Applications)", r"\n\n📈 Real-World Applications\n\n", final_text)
-            final_text = re.sub(r"(✅ Summary)", r"\n\n✅ Summary\n\n", final_text)
-            final_text = re.sub(r"(📚 Sources)", r"\n\n📚 Sources\n\n", final_text)
+            final_text = re.sub(
+                r"(📌 Overview)",
+                r"\n\n📌 Overview\n\n",
+                final_text
+            )
 
-            # bullet spacing
-            final_text = final_text.replace("• ", "\n• ")
+            final_text = re.sub(
+                r"(🔍 Key Concepts)",
+                r"\n\n🔍 Key Concepts\n\n",
+                final_text
+            )
 
-            # paragraph spacing
-            final_text = re.sub(r"\.\s+", ".\n\n", final_text)
+            final_text = re.sub(
+                r"(🧠 Detailed Explanation)",
+                r"\n\n🧠 Detailed Explanation\n\n",
+                final_text
+            )
 
-            # links spacing
-            final_text = re.sub(r"(https?://\S+)", r"\n\1", final_text)
+            final_text = re.sub(
+                r"(📊 Advantages)",
+                r"\n\n📊 Advantages\n\n",
+                final_text
+            )
 
-            # clean extra spaces
-            final_text = re.sub(r"\n{3,}", "\n\n", final_text)
+            final_text = re.sub(
+                r"(⚠️ Limitations)",
+                r"\n\n⚠️ Limitations\n\n",
+                final_text
+            )
+
+            final_text = re.sub(
+                r"(📈 Applications)",
+                r"\n\n📈 Applications\n\n",
+                final_text
+            )
+
+            final_text = re.sub(
+                r"(📈 Real-World Applications)",
+                r"\n\n📈 Real-World Applications\n\n",
+                final_text
+            )
+
+            final_text = re.sub(
+                r"(✅ Summary)",
+                r"\n\n✅ Summary\n\n",
+                final_text
+            )
+
+            final_text = re.sub(
+                r"(📚 Sources)",
+                r"\n\n📚 Sources\n\n",
+                final_text
+            )
+
+            final_text = final_text.replace(
+                "• ",
+                "\n• "
+            )
+
+            final_text = re.sub(
+                r"(https?://\S+)",
+                r"\n\1",
+                final_text
+            )
+
+            final_text = re.sub(
+                r"\n{3,}",
+                "\n\n",
+                final_text
+            )
 
             final_text = final_text.strip()
 
             # =========================
-            # RESPONSE
+            # STREAM RESPONSE
             # =========================
-            yield f"data: {json.dumps({'token': final_text})}\n\n"
+
+            for chunk in re.findall(
+              r'.{1,40}',
+             final_text,
+              flags=re.DOTALL
+            ):
+
+             yield f"data: {json.dumps({'token': chunk})}\n\n"
+
+             await asyncio.sleep(0.01)
+
+            yield f"data: {json.dumps({'type':'thinking','content':''})}\n\n"
+
             yield f"data: {json.dumps({'done': True})}\n\n"
 
         except Exception as e:
+
+            print("STREAM ERROR:", e)
+
+            yield f"data: {json.dumps({'type':'thinking','content':''})}\n\n"
+
             yield f"data: {json.dumps({'token': '❌ Error: ' + str(e)})}\n\n"
+
             yield f"data: {json.dumps({'done': True})}\n\n"
 
     return StreamingResponse(
@@ -162,20 +393,61 @@ async def stream():
 # ==========================
 @app.post("/save-chat")
 async def save_chat(data: ChatRequest):
-    chat_collection.update_one(
-        {"user": "guest"},
-        {"$set": {"conversations": data.conversations}},
-        upsert=True
-    )
-    return {"success": True}
+
+    if not chat_collection:
+        return {
+            "success": False,
+            "message": "MongoDB not connected"
+        }
+
+    try:
+        chat_collection.update_one(
+            {"user": USER_ID},
+            {
+                "$set": {
+                    "conversations": data.conversations
+                }
+            },
+            upsert=True
+        )
+
+        return {
+            "success": True
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 # ==========================
 # GET CHAT
 # ==========================
 @app.get("/get-chats")
 async def get_chats():
-    doc = chat_collection.find_one({"user": "guest"})
-    return {"conversations": doc["conversations"] if doc else []}
+
+    if not chat_collection:
+        return {
+            "conversations": []
+        }
+
+    try:
+        doc = chat_collection.find_one(
+            {"user": USER_ID}
+        )
+
+        return {
+            "conversations":
+                doc["conversations"]
+                if doc else []
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 # ==========================
 # ROOT
