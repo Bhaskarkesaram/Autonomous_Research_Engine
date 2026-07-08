@@ -16,7 +16,19 @@ import {
   FileText,
 } from "lucide-react";
 
-const nodes = [
+import { useStore } from "../store/useStore";
+import { useMemo } from "react";
+
+const getNodes = (thinking: string) => {
+
+  const active = (text: string) =>
+    thinking
+      .toLowerCase()
+      .includes(
+        text.toLowerCase()
+      );
+
+  return [
   {
     id: "1",
     position: { x: 50, y: 120 },
@@ -28,18 +40,21 @@ const nodes = [
             className="mx-auto mb-2 text-violet-400"
           />
           <div className="font-semibold">
-            Supervisor
+            Nexora Planner
           </div>
           <div className="text-xs text-zinc-400">
-            Task Planning
+            Task Understanding
           </div>
         </div>
       ),
     },
+    
     style: {
       background: "#18181b",
       color: "white",
-      border: "1px solid #3f3f46",
+      border: active("Planning")
+      ? "2px solid #22c55e"
+      : "1px solid #3f3f46",
       borderRadius: "16px",
       width: 180,
       padding: 12,
@@ -57,10 +72,10 @@ const nodes = [
             className="mx-auto mb-2 text-blue-400"
           />
           <div className="font-semibold">
-            Research Agent
+            Source Agent
           </div>
           <div className="text-xs text-zinc-400">
-            Gather Information
+            Web Intelligence
           </div>
         </div>
       ),
@@ -68,7 +83,9 @@ const nodes = [
     style: {
       background: "#18181b",
       color: "white",
-      border: "1px solid #3f3f46",
+      border: active("Searching")
+      ? "2px solid #22c55e"
+      : "1px solid #3f3f46",
       borderRadius: "16px",
       width: 180,
       padding: 12,
@@ -86,10 +103,10 @@ const nodes = [
             className="mx-auto mb-2 text-emerald-400"
           />
           <div className="font-semibold">
-            Analysis Agent
+            Reasoning Agent
           </div>
           <div className="text-xs text-zinc-400">
-            Deep Reasoning
+            Cognitive Analysis
           </div>
         </div>
       ),
@@ -97,7 +114,9 @@ const nodes = [
     style: {
       background: "#18181b",
       color: "white",
-      border: "1px solid #3f3f46",
+      border: active("Validating")
+      ? "2px solid #22c55e"
+      : "1px solid #3f3f46",
       borderRadius: "16px",
       width: 180,
       padding: 12,
@@ -115,10 +134,10 @@ const nodes = [
             className="mx-auto mb-2 text-orange-400"
           />
           <div className="font-semibold">
-            Summarizer
+            Report Agent
           </div>
           <div className="text-xs text-zinc-400">
-            Final Output
+            Research Report
           </div>
         </div>
       ),
@@ -126,13 +145,16 @@ const nodes = [
     style: {
       background: "#18181b",
       color: "white",
-      border: "1px solid #3f3f46",
+      border: active("Generating")
+      ? "2px solid #22c55e"
+      : "1px solid #3f3f46",
       borderRadius: "16px",
       width: 180,
       padding: 12,
     },
   },
 ];
+};
 
 const edges = [
   {
@@ -162,7 +184,18 @@ const edges = [
 ];
 
 export default function AgentFlow() {
-  return (
+
+const { thinking } =
+useStore();
+
+
+const nodes = useMemo(
+ () => getNodes(thinking),
+ [thinking]
+);
+
+
+return (
     <div
       className="
       h-[450px]
@@ -176,11 +209,11 @@ export default function AgentFlow() {
     >
       <div className="px-5 py-4 border-b border-white/10">
         <h2 className="font-semibold text-white">
-          Multi-Agent Workflow
+           Nexora AI Workflow
         </h2>
 
         <p className="text-sm text-zinc-500">
-          Real-time cognitive pipeline
+          Autonomous multi-agent reasoning pipeline
         </p>
       </div>
 

@@ -14,6 +14,9 @@ import {
   Check,
 } from "lucide-react";
 
+import SourceCards from "../SourceCards";
+import AgentStatus from "../AgentStatus";
+
 export default function ChatContainer() {
   const { conversations, currentChatId, stream, error, thinking } = useStore();
 
@@ -52,6 +55,32 @@ export default function ChatContainer() {
 
     setAutoScroll(isNearBottom);
   };
+
+  const extractSources = (
+  text: string
+) => {
+
+  const links =
+    text.match(
+      /https?:\/\/[^\s]+/g
+    ) || [];
+
+
+  const cleanText =
+    text
+      .replace(
+        /📚 Sources[\s\S]*/g,
+        ""
+      )
+      .trim();
+
+
+  return {
+    cleanText,
+    sources: links,
+  };
+
+};
 
   const copyText = async (
     text: string,
@@ -172,28 +201,49 @@ export default function ChatContainer() {
                     text-zinc-400
                   "
                   >
-                    AI Research Engine
+                    Nexora Research Agent
                   </span>
                 </div>
               )}
 
-              <div
-                className="
-                prose
-                prose-invert
-                max-w-none
-                text-sm
-                leading-7
-              "
-              >
-                <ReactMarkdown
-                  remarkPlugins={[
-                    remarkGfm,
-                  ]}
-                >
-                  {msg.content}
-                </ReactMarkdown>
-              </div>
+<div
+  className="
+  prose
+  prose-invert
+  max-w-none
+  text-sm
+  leading-7
+  "
+>
+  <ReactMarkdown
+    remarkPlugins={[
+      remarkGfm,
+    ]}
+  >
+    {
+      extractSources(
+        msg.content
+      ).cleanText
+    }
+  </ReactMarkdown>
+
+</div>
+
+
+{/* SOURCES */}
+{!isUser && (
+
+  <SourceCards
+
+    sources={
+      extractSources(
+        msg.content
+      ).sources
+    }
+
+  />
+
+)}
 
               {!isUser && (
                 <button
@@ -322,11 +372,11 @@ export default function ChatContainer() {
               />
 
               <h2 className="text-lg font-semibold">
-                Cognitive Research Engine
+                Nexora AI
               </h2>
 
                <p className="text-zinc-500 mt-2">
-                  Ask a question to begin research.
+                  Start your intelligent research session.
   </p>
 </div>
             </div>
@@ -384,7 +434,7 @@ export default function ChatContainer() {
                   />
 
                   <span className="text-xs text-zinc-400">
-                    {thinking || "Researching..."}
+                    {thinking || "Nexora is researching..."}
                   </span>
                 </div>
 

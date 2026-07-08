@@ -4,13 +4,10 @@ import {
   User,
   Bot,
   Copy,
-  ThumbsUp,
-  ThumbsDown,
-  RefreshCw,
-  MoreHorizontal,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useStore } from "../../store/useStore";
+import ResponseActions from "../ResponseActions";
 
 type Props = {
   id: string;
@@ -50,10 +47,6 @@ export default function MessageBubble({ id, role, content }: Props) {
     navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  };
-
-  const handleRegenerate = (text: string) => {
-    console.log("Regenerate:", text);
   };
 
   return (
@@ -156,35 +149,17 @@ export default function MessageBubble({ id, role, content }: Props) {
         </div>
       )}
 
-      {/* ACTION BUTTONS */}
+      {/* RESPONSE ACTIONS */}
       {role === "ai" && (
-        <div className="flex items-center gap-3 mt-1 ml-10 text-gray-400 text-xs">
-          <button
-            onClick={handleCopy}
-            className="hover:text-white flex items-center gap-1"
-          >
-            <Copy size={14} /> Copy
-          </button>
 
-          <button className="hover:text-green-400">
-            <ThumbsUp size={14} />
-          </button>
+        <div className="ml-10 mt-2">
 
-          <button className="hover:text-red-400">
-            <ThumbsDown size={14} />
-          </button>
+          <ResponseActions
+            content={content}
+          />
 
-          <button
-            onClick={() => handleRegenerate(content)}
-            className="hover:text-blue-400"
-          >
-            <RefreshCw size={14} />
-          </button>
-
-          <button className="hover:text-white">
-            <MoreHorizontal size={14} />
-          </button>
         </div>
+
       )}
     </div>
   );
