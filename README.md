@@ -47,7 +47,7 @@ This project is designed to simulate a **cognitive architecture**, where multipl
 # 🏗️ Project Structure
 
 ```
-autonomous-cognitive-engine/
+COGNITIVE-ENGINE-MASTER/
 │
 ├── backend/
 │   ├── agents/
