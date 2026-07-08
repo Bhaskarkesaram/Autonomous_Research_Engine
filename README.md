@@ -1,4 +1,4 @@
-# 🚀 Autonomous Cognitive Engine
+# Nexora AI — Autonomous Multi-Agent Research Engine
 
 An advanced **AI-powered multi-agent system** that performs intelligent task execution using modular agents, graph-based workflows, and Retrieval-Augmented Generation (RAG).
 
