@@ -178,7 +178,7 @@ Final Response → Frontend (Streaming)
 ## 1️⃣ Clone the Repository
 
 ```
-git clone https://github.com/Bhaskarkesaram/autonomous-cognitive-engine.git
+git clone https://github.com/Bhaskarkesaram/.git
 cd autonomous-cognitive-engine
 ```
 
